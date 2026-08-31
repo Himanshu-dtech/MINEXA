@@ -18,28 +18,56 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+
 import { useToast } from '@/hooks/use-toast';
 
-const STORAGE_KEY = 'minexa-leave-requests';
+import {
+  createLeaveRequest,
+  getLeaveRequests,
+} from '@/lib/api';
 
 const leaveRequestSchema = z
   .object({
-    leaveType: z.enum(['annual', 'sick', 'personal', 'emergency'], {
-      required_error: 'Select a leave type.',
-    }),
-    startDate: z.string().min(1, 'Select a start date.'),
-    endDate: z.string().min(1, 'Select an end date.'),
+    leaveType: z.enum(
+      ['annual', 'sick', 'personal', 'emergency'],
+      {
+        required_error: 'Select a leave type.',
+      },
+    ),
+
+    startDate: z
+      .string()
+      .min(1, 'Select a start date.'),
+
+    endDate: z
+      .string()
+      .min(1, 'Select an end date.'),
+
     reason: z
       .string()
       .trim()
-      .min(10, 'Add at least 10 characters explaining your request.')
-      .max(500, 'Reason must be 500 characters or fewer.'),
+      .min(
+        10,
+        'Add at least 10 characters explaining your request.',
+      )
+      .max(
+        500,
+        'Reason must be 500 characters or fewer.',
+      ),
   })
   .superRefine((request, context) => {
-    const start = new Date(`${request.startDate}T00:00:00`);
-    const end = new Date(`${request.endDate}T00:00:00`);
+    const start = new Date(
+      `${request.startDate}T00:00:00`,
+    );
 
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    const end = new Date(
+      `${request.endDate}T00:00:00`,
+    );
+
+    if (
+      Number.isNaN(start.getTime()) ||
+      Number.isNaN(end.getTime())
+    ) {
       return;
     }
 
@@ -47,17 +75,27 @@ const leaveRequestSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['endDate'],
-        message: 'End date must be on or after the start date.',
+        message:
+          'End date must be on or after the start date.',
       });
     }
   });
 
-type LeaveType = 'annual' | 'sick' | 'personal' | 'emergency';
+type LeaveType =
+  | 'annual'
+  | 'sick'
+  | 'personal'
+  | 'emergency';
 
-type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+type LeaveStatus =
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled';
 
 type LeaveRequest = {
-  id: string;
+  id: number;
+  workerId: number;
   leaveType: LeaveType;
   startDate: string;
   endDate: string;
@@ -83,12 +121,30 @@ const leaveLabels: Record<LeaveType, string> = {
 
 const leaveBalances: Record<
   LeaveType,
-  { total: number; used: number }
+  {
+    total: number;
+    used: number;
+  }
 > = {
-  annual: { total: 20, used: 6 },
-  sick: { total: 10, used: 2 },
-  personal: { total: 5, used: 1 },
-  emergency: { total: 3, used: 0 },
+  annual: {
+    total: 20,
+    used: 6,
+  },
+
+  sick: {
+    total: 10,
+    used: 2,
+  },
+
+  personal: {
+    total: 5,
+    used: 1,
+  },
+
+  emergency: {
+    total: 3,
+    used: 0,
+  },
 };
 
 const initialForm: LeaveForm = {
@@ -98,13 +154,28 @@ const initialForm: LeaveForm = {
   reason: '',
 };
 
-const getWorkingDays = (startDate: string, endDate: string) => {
-  if (!startDate || !endDate) return 0;
+const WORKER_ID = 1;
 
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
+const getWorkingDays = (
+  startDate: string,
+  endDate: string,
+) => {
+  if (!startDate || !endDate) {
+    return 0;
+  }
 
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+  const start = new Date(
+    `${startDate}T00:00:00`,
+  );
+
+  const end = new Date(
+    `${endDate}T00:00:00`,
+  );
+
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime())
+  ) {
     return 0;
   }
 
@@ -113,17 +184,21 @@ const getWorkingDays = (startDate: string, endDate: string) => {
   }
 
   let days = 0;
+
   const current = new Date(start);
 
   while (current <= end) {
     const day = current.getDay();
 
-    // Monday-Friday only
+    // Sunday = 0
+    // Saturday = 6
     if (day !== 0 && day !== 6) {
       days += 1;
     }
 
-    current.setDate(current.getDate() + 1);
+    current.setDate(
+      current.getDate() + 1,
+    );
   }
 
   return days;
@@ -132,14 +207,45 @@ const getWorkingDays = (startDate: string, endDate: string) => {
 const formatDate = (date: string) => {
   if (!date) return '-';
 
+  const rawDate = String(date);
+
+  const parsedDate =
+    rawDate.length === 10
+      ? new Date(`${rawDate}T00:00:00`)
+      : new Date(rawDate);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    console.error('Invalid date received:', date);
+    return '-';
+  }
+
   return new Intl.DateTimeFormat('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(new Date(`${date}T00:00:00`));
+  }).format(parsedDate);
 };
 
-const getStatusStyles = (status: LeaveStatus) => {
+const formatSubmittedDate = (date: string) => {
+  if (!date) return '-';
+
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    console.error('Invalid submitted date:', date);
+    return '-';
+  }
+
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(parsedDate);
+};
+
+const getStatusStyles = (
+  status: LeaveStatus,
+) => {
   switch (status) {
     case 'approved':
       return 'bg-primary/10 text-primary border-primary/20';
@@ -155,165 +261,346 @@ const getStatusStyles = (status: LeaveStatus) => {
   }
 };
 
+const mapApiRequest = (
+  request: {
+    id: number;
+    worker_id: number;
+    leave_type: LeaveType;
+    start_date: string;
+    end_date: string;
+    days: number;
+    reason: string;
+    status: LeaveStatus;
+    submitted_at: string;
+  },
+): LeaveRequest => ({
+  id: request.id,
+  workerId: request.worker_id,
+  leaveType: request.leave_type,
+  startDate: request.start_date,
+  endDate: request.end_date,
+  days: request.days,
+  reason: request.reason,
+  status: request.status,
+  submittedAt: request.submitted_at,
+});
+
 export default function LeaveManagementForm() {
-  const [form, setForm] = useState<LeaveForm>(initialForm);
-  const [requests, setRequests] = useState<LeaveRequest[]>([]);
-  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] =
+    useState<LeaveForm>(initialForm);
 
-  const { toast } = useToast();
+  const [requests, setRequests] =
+    useState<LeaveRequest[]>([]);
 
-  // Load requests from localStorage.
+  const [showForm, setShowForm] =
+    useState(false);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [submitting, setSubmitting] =
+    useState(false);
+
+  const {
+    toast,
+  } = useToast();
+
+  // --------------------------------------------------
+  // LOAD LEAVE REQUESTS FROM EXPRESS + POSTGRESQL
+  // --------------------------------------------------
+
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+    const loadLeaveRequests =
+      async () => {
+        try {
+          setLoading(true);
 
-      if (!saved) return;
+          const data =
+            await getLeaveRequests();
 
-      const parsed = JSON.parse(saved);
+          const mappedRequests =
+            data.map(mapApiRequest);
 
-      if (Array.isArray(parsed)) {
-        setRequests(parsed);
-      }
-    } catch (error) {
-      console.error('Unable to load leave requests:', error);
-    }
-  }, []);
+          setRequests(mappedRequests);
+        } catch (error) {
+          console.error(
+            'Unable to load leave requests:',
+            error,
+          );
 
-  // Save requests whenever they change.
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(requests));
-    } catch (error) {
-      console.error('Unable to save leave requests:', error);
-    }
-  }, [requests]);
+          toast({
+            title:
+              'Unable to load leave history',
+            description:
+              'Make sure the MINEXA backend is running.',
+            variant: 'destructive',
+          });
+        } finally {
+          setLoading(false);
+        }
+      };
+
+    loadLeaveRequests();
+  }, [toast]);
+
+  // --------------------------------------------------
+  // CALCULATE WORKING DAYS
+  // --------------------------------------------------
 
   const duration = useMemo(
-    () => getWorkingDays(form.startDate, form.endDate),
-    [form.startDate, form.endDate],
+    () =>
+      getWorkingDays(
+        form.startDate,
+        form.endDate,
+      ),
+    [
+      form.startDate,
+      form.endDate,
+    ],
   );
 
-  const updateField = (field: keyof LeaveForm, value: string) => {
+  // --------------------------------------------------
+  // UPDATE FORM FIELD
+  // --------------------------------------------------
+
+  const updateField = (
+    field: keyof LeaveForm,
+    value: string,
+  ) => {
     setForm((current) => ({
       ...current,
       [field]: value,
     }));
   };
 
+  // --------------------------------------------------
+  // SELECTED LEAVE BALANCE
+  // --------------------------------------------------
+
   const selectedBalance =
-    form.leaveType && form.leaveType in leaveBalances
-      ? leaveBalances[form.leaveType as LeaveType]
+    form.leaveType &&
+    form.leaveType in leaveBalances
+      ? leaveBalances[
+          form.leaveType as LeaveType
+        ]
       : null;
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  // --------------------------------------------------
+  // CALCULATE REMAINING BALANCE
+  // --------------------------------------------------
+
+  const getRemainingBalance = (
+    type: LeaveType,
+  ) => {
+    const base =
+      leaveBalances[type].total -
+      leaveBalances[type].used;
+
+    const reserved =
+      requests
+        .filter(
+          (request) =>
+            request.leaveType === type &&
+            (
+              request.status === 'pending' ||
+              request.status === 'approved'
+            ),
+        )
+        .reduce(
+          (sum, request) =>
+            sum + request.days,
+          0,
+        );
+
+    return Math.max(
+      base - reserved,
+      0,
+    );
+  };
+
+  // --------------------------------------------------
+  // SUBMIT LEAVE REQUEST
+  // --------------------------------------------------
+
+  const handleSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
     event.preventDefault();
 
-    const result = leaveRequestSchema.safeParse(form);
+    const result =
+      leaveRequestSchema.safeParse(
+        form,
+      );
 
     if (!result.success) {
       toast({
-        title: 'Review your leave request',
+        title:
+          'Review your leave request',
         description:
-          result.error.issues[0]?.message ??
+          result.error.issues[0]
+            ?.message ??
           'Complete all required fields.',
-        variant: 'destructive',
+        variant:
+          'destructive',
       });
 
       return;
     }
 
-    const requestDays = getWorkingDays(
-      result.data.startDate,
-      result.data.endDate,
-    );
+    const requestDays =
+      getWorkingDays(
+        result.data.startDate,
+        result.data.endDate,
+      );
 
     if (requestDays === 0) {
       toast({
-        title: 'Invalid leave duration',
-        description: 'Select at least one working day.',
-        variant: 'destructive',
+        title:
+          'Invalid leave duration',
+        description:
+          'Select at least one working day.',
+        variant:
+          'destructive',
       });
 
       return;
     }
 
-    const balance = leaveBalances[result.data.leaveType];
+    const balance =
+      leaveBalances[
+        result.data.leaveType
+      ];
 
-    const pendingOrApprovedDays = requests
-      .filter(
-        (request) =>
-          request.leaveType === result.data.leaveType &&
-          (request.status === 'pending' ||
-            request.status === 'approved'),
-      )
-      .reduce((sum, request) => sum + request.days, 0);
+    const pendingOrApprovedDays =
+      requests
+        .filter(
+          (request) =>
+            request.leaveType ===
+              result.data.leaveType &&
+            (
+              request.status === 'pending' ||
+              request.status === 'approved'
+            ),
+        )
+        .reduce(
+          (sum, request) =>
+            sum + request.days,
+          0,
+        );
 
-    const remaining = balance.total - balance.used - pendingOrApprovedDays;
+    const remaining =
+      balance.total -
+      balance.used -
+      pendingOrApprovedDays;
 
     if (requestDays > remaining) {
       toast({
-        title: 'Insufficient leave balance',
-        description: `Only ${remaining} day(s) are available for this leave type.`,
-        variant: 'destructive',
+        title:
+          'Insufficient leave balance',
+        description:
+          `Only ${remaining} day(s) are available for this leave type.`,
+        variant:
+          'destructive',
       });
 
       return;
     }
 
-    const newRequest: LeaveRequest = {
-      id: crypto.randomUUID(),
-      leaveType: result.data.leaveType,
-      startDate: result.data.startDate,
-      endDate: result.data.endDate,
-      days: requestDays,
-      reason: result.data.reason,
-      status: 'pending',
-      submittedAt: new Date().toISOString(),
-    };
+    try {
+      setSubmitting(true);
 
-    setRequests((current) => [newRequest, ...current]);
+      // Send request to Express
+      const createdRequest =
+        await createLeaveRequest({
+          workerId: WORKER_ID,
+          leaveType:
+            result.data.leaveType,
+          startDate:
+            result.data.startDate,
+          endDate:
+            result.data.endDate,
+          days: requestDays,
+          reason:
+            result.data.reason,
+        });
 
-    setForm(initialForm);
-    setShowForm(false);
+      // Convert API response into UI format
+      const newRequest =
+        mapApiRequest(
+          createdRequest,
+        );
 
-    toast({
-      title: 'Leave request submitted',
-      description: `${requestDays} working day(s) added to your pending requests.`,
-    });
+      // Add new request to the top
+      setRequests(
+        (current) => [
+          newRequest,
+          ...current,
+        ],
+      );
+
+      // Reset form
+      setForm(initialForm);
+
+      setShowForm(false);
+
+      toast({
+        title:
+          'Leave request submitted',
+        description:
+          'Your request has been saved and sent for supervisor approval.',
+      });
+    } catch (error) {
+      console.error(
+        'Unable to submit leave request:',
+        error,
+      );
+
+      toast({
+        title:
+          'Submission failed',
+        description:
+          error instanceof Error
+            ? error.message
+            : 'Unable to submit your leave request.',
+        variant:
+          'destructive',
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const cancelRequest = (id: string) => {
-    setRequests((current) =>
-      current.map((request) =>
-        request.id === id
-          ? {
-              ...request,
-              status: 'cancelled',
-            }
-          : request,
-      ),
+  // --------------------------------------------------
+  // FRONTEND CANCEL
+  //
+  // IMPORTANT:
+  // This is temporary. We will replace this with
+  // PATCH /api/v1/leave-requests/:id/cancel
+  // --------------------------------------------------
+
+  const cancelRequest = (
+    id: number,
+  ) => {
+    setRequests(
+      (current) =>
+        current.map(
+          (request) =>
+            request.id === id
+              ? {
+                  ...request,
+                  status:
+                    'cancelled',
+                }
+              : request,
+        ),
     );
 
     toast({
-      title: 'Leave request cancelled',
-      description: 'The pending leave request has been cancelled.',
+      title:
+        'Request cancelled locally',
+      description:
+        'Database cancellation will be connected next.',
     });
-  };
-
-  const getRemainingBalance = (type: LeaveType) => {
-    const base =
-      leaveBalances[type].total - leaveBalances[type].used;
-
-    const reserved = requests
-      .filter(
-        (request) =>
-          request.leaveType === type &&
-          (request.status === 'pending' ||
-            request.status === 'approved'),
-      )
-      .reduce((sum, request) => sum + request.days, 0);
-
-    return Math.max(base - reserved, 0);
   };
 
   return (
@@ -321,7 +608,10 @@ export default function LeaveManagementForm() {
       className="space-y-6"
       aria-labelledby="leave-management-title"
     >
-      {/* Header */}
+      {/* ------------------------------------------- */}
+      {/* HEADER                                      */}
+      {/* ------------------------------------------- */}
+
       <div className="ops-card p-5">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div className="flex items-start gap-3">
@@ -349,7 +639,11 @@ export default function LeaveManagementForm() {
 
           <Button
             type="button"
-            onClick={() => setShowForm((current) => !current)}
+            onClick={() =>
+              setShowForm(
+                (current) => !current,
+              )
+            }
             className="gap-2"
           >
             {showForm ? (
@@ -367,57 +661,75 @@ export default function LeaveManagementForm() {
         </div>
       </div>
 
-      {/* Leave balance */}
+      {/* ------------------------------------------- */}
+      {/* LEAVE BALANCE                               */}
+      {/* ------------------------------------------- */}
+
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {(Object.keys(leaveBalances) as LeaveType[]).map(
-          (type) => {
-            const remaining = getRemainingBalance(type);
-            const total = leaveBalances[type].total;
-            const used = total - remaining;
-
-            return (
-              <div
-                key={type}
-                className="ops-card p-4"
-              >
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[.16em] text-muted-foreground">
-                      {leaveLabels[type]}
-                    </p>
-
-                    <p className="mt-2 text-2xl font-semibold text-foreground">
-                      {remaining}
-                    </p>
-
-                    <p className="text-[11px] text-muted-foreground">
-                      remaining of {total} days
-                    </p>
-                  </div>
-
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <CalendarDays className="h-4 w-4" />
-                  </span>
-                </div>
-
-                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-secondary">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{
-                      width: `${Math.min(
-                        (used / total) * 100,
-                        100,
-                      )}%`,
-                    }}
-                  />
-                </div>
-              </div>
+        {(
+          Object.keys(
+            leaveBalances,
+          ) as LeaveType[]
+        ).map((type) => {
+          const remaining =
+            getRemainingBalance(
+              type,
             );
-          },
-        )}
+
+          const total =
+            leaveBalances[type]
+              .total;
+
+          const used =
+            total - remaining;
+
+          return (
+            <div
+              key={type}
+              className="ops-card p-4"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[.16em] text-muted-foreground">
+                    {leaveLabels[type]}
+                  </p>
+
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {remaining}
+                  </p>
+
+                  <p className="text-[11px] text-muted-foreground">
+                    remaining of {total}{' '}
+                    days
+                  </p>
+                </div>
+
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <CalendarDays className="h-4 w-4" />
+                </span>
+              </div>
+
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{
+                    width: `${Math.min(
+                      (used / total) *
+                        100,
+                      100,
+                    )}%`,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {/* Apply form */}
+      {/* ------------------------------------------- */}
+      {/* APPLY FORM                                  */}
+      {/* ------------------------------------------- */}
+
       {showForm && (
         <div className="ops-card p-5">
           <div className="mb-5">
@@ -436,9 +748,13 @@ export default function LeaveManagementForm() {
 
           <form
             className="space-y-5"
-            onSubmit={handleSubmit}
+            onSubmit={
+              handleSubmit
+            }
             noValidate
           >
+            {/* Leave type */}
+
             <div>
               <label
                 htmlFor="leave-type"
@@ -448,12 +764,21 @@ export default function LeaveManagementForm() {
               </label>
 
               <Select
-                value={form.leaveType}
-                onValueChange={(value) =>
-                  updateField('leaveType', value)
+                value={
+                  form.leaveType
+                }
+                onValueChange={(
+                  value,
+                ) =>
+                  updateField(
+                    'leaveType',
+                    value,
+                  )
                 }
               >
-                <SelectTrigger id="leave-type">
+                <SelectTrigger
+                  id="leave-type"
+                >
                   <SelectValue placeholder="Select leave type" />
                 </SelectTrigger>
 
@@ -486,6 +811,8 @@ export default function LeaveManagementForm() {
               )}
             </div>
 
+            {/* Dates */}
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label
@@ -498,9 +825,17 @@ export default function LeaveManagementForm() {
                 <input
                   id="leave-start"
                   type="date"
-                  value={form.startDate}
-                  onChange={(event) =>
-                    updateField('startDate', event.target.value)
+                  value={
+                    form.startDate
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    updateField(
+                      'startDate',
+                      event.target
+                        .value,
+                    )
                   }
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
@@ -517,15 +852,28 @@ export default function LeaveManagementForm() {
                 <input
                   id="leave-end"
                   type="date"
-                  min={form.startDate || undefined}
-                  value={form.endDate}
-                  onChange={(event) =>
-                    updateField('endDate', event.target.value)
+                  min={
+                    form.startDate ||
+                    undefined
+                  }
+                  value={
+                    form.endDate
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    updateField(
+                      'endDate',
+                      event.target
+                        .value,
+                    )
                   }
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
                 />
               </div>
             </div>
+
+            {/* Duration */}
 
             {duration > 0 && (
               <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
@@ -537,7 +885,10 @@ export default function LeaveManagementForm() {
 
                     <p className="mt-1 text-sm font-semibold text-foreground">
                       {duration}{' '}
-                      {duration === 1 ? 'working day' : 'working days'}
+                      {duration ===
+                      1
+                        ? 'working day'
+                        : 'working days'}
                     </p>
                   </div>
 
@@ -550,6 +901,8 @@ export default function LeaveManagementForm() {
               </div>
             )}
 
+            {/* Reason */}
+
             <div>
               <label
                 htmlFor="leave-reason"
@@ -560,9 +913,17 @@ export default function LeaveManagementForm() {
 
               <Textarea
                 id="leave-reason"
-                value={form.reason}
-                onChange={(event) =>
-                  updateField('reason', event.target.value)
+                value={
+                  form.reason
+                }
+                onChange={(
+                  event,
+                ) =>
+                  updateField(
+                    'reason',
+                    event.target
+                      .value,
+                  )
                 }
                 maxLength={500}
                 placeholder="Briefly explain the reason for your leave request"
@@ -570,24 +931,44 @@ export default function LeaveManagementForm() {
               />
 
               <p className="mt-1 text-right text-[10px] text-muted-foreground">
-                {form.reason.length}/500
+                {form.reason.length}
+                /500
               </p>
             </div>
+
+            {/* Buttons */}
 
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button
                 type="submit"
                 className="gap-2"
+                disabled={
+                  submitting
+                }
               >
-                <FileText className="h-4 w-4" />
-                Submit leave request
+                {submitting ? (
+                  <>
+                    <Clock3 className="h-4 w-4 animate-spin" />
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4" />
+                    Submit leave request
+                  </>
+                )}
               </Button>
 
               <Button
                 type="button"
                 variant="outline"
+                disabled={
+                  submitting
+                }
                 onClick={() => {
-                  setForm(initialForm);
+                  setForm(
+                    initialForm,
+                  );
                   setShowForm(false);
                 }}
               >
@@ -598,7 +979,10 @@ export default function LeaveManagementForm() {
         </div>
       )}
 
-      {/* Request history */}
+      {/* ------------------------------------------- */}
+      {/* REQUEST HISTORY                             */}
+      {/* ------------------------------------------- */}
+
       <div className="ops-card p-5">
         <div className="mb-5 flex items-center justify-between">
           <div>
@@ -614,7 +998,22 @@ export default function LeaveManagementForm() {
           <FileText className="h-4 w-4 text-muted-foreground" />
         </div>
 
-        {requests.length === 0 ? (
+        {/* Loading */}
+
+        {loading ? (
+          <div className="rounded-lg border border-border p-8 text-center">
+            <Clock3 className="mx-auto h-6 w-6 animate-spin text-primary" />
+
+            <p className="mt-3 text-sm font-semibold">
+              Loading leave requests...
+            </p>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              Fetching your latest records.
+            </p>
+          </div>
+        ) : requests.length === 0 ? (
+          /* Empty */
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
             <CalendarDays className="mx-auto h-7 w-7 text-muted-foreground" />
 
@@ -627,80 +1026,109 @@ export default function LeaveManagementForm() {
             </p>
           </div>
         ) : (
+          /* Requests */
           <div className="space-y-3">
-            {requests.map((request) => (
-              <div
-                key={request.id}
-                className="rounded-lg border border-border bg-background/30 p-4"
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold">
-                        {leaveLabels[request.leaveType]}
+            {requests.map(
+              (request) => (
+                <div
+                  key={
+                    request.id
+                  }
+                  className="rounded-lg border border-border bg-background/30 p-4"
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold">
+                          {
+                            leaveLabels[
+                              request
+                                .leaveType
+                            ]
+                          }
+                        </p>
+
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${getStatusStyles(
+                            request.status,
+                          )}`}
+                        >
+                          {
+                            request.status
+                          }
+                        </span>
+                      </div>
+
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {formatDate(
+                          request.startDate,
+                        )}{' '}
+                        →{' '}
+                        {formatDate(
+                          request.endDate,
+                        )}
                       </p>
 
-                      <span
-                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${getStatusStyles(
-                          request.status,
-                        )}`}
-                      >
-                        {request.status}
-                      </span>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {request.days}{' '}
+                        {request.days ===
+                        1
+                          ? 'working day'
+                          : 'working days'}
+                        {' • '}
+                        Submitted{' '}
+                        {formatSubmittedDate(
+                          request.submittedAt,
+                        )}
+                      </p>
+
+                      <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                        {
+                          request.reason
+                        }
+                      </p>
                     </div>
 
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {formatDate(request.startDate)} →{' '}
-                      {formatDate(request.endDate)}
-                    </p>
-
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {request.days}{' '}
-                      {request.days === 1 ? 'working day' : 'working days'}
-                      {' • '}
-                      Submitted{' '}
-                      {new Intl.DateTimeFormat('en-IN', {
-                        day: '2-digit',
-                        month: 'short',
-                      }).format(new Date(request.submittedAt))}
-                    </p>
-
-                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                      {request.reason}
-                    </p>
+                    {request.status ===
+                      'pending' && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          cancelRequest(
+                            request.id,
+                          )
+                        }
+                      >
+                        Cancel request
+                      </Button>
+                    )}
                   </div>
-
-                  {request.status === 'pending' && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => cancelRequest(request.id)}
-                    >
-                      Cancel request
-                    </Button>
-                  )}
                 </div>
-              </div>
-            ))}
+              ),
+            )}
           </div>
         )}
       </div>
 
-      {/* Demo note */}
+      {/* ------------------------------------------- */}
+      {/* BACKEND STATUS                              */}
+      {/* ------------------------------------------- */}
+
       <div className="rounded-lg border border-primary/15 bg-primary/5 p-4">
         <div className="flex gap-3">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
 
           <div>
             <p className="text-xs font-semibold text-foreground">
-              Frontend mode
+              Database connected
             </p>
 
             <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-              Requests are currently stored locally in your browser.
-              When MINEXA gets its NestJS + PostgreSQL backend, this
-              storage layer will be replaced with real API calls.
+              Leave requests are now loaded from
+              the MINEXA Express API and PostgreSQL
+              database.
             </p>
           </div>
         </div>
