@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
+
 import { 
   LogOut, 
   AlertTriangle, 
@@ -70,6 +71,7 @@ const WorkerDashboard: React.FC<WorkerDashboardProps> = ({ onLogout }) => {
         <div className="flex items-center gap-4">
           <div className="p-3 bg-safety-success/20 rounded-full">
             <HardHat className="w-8 h-8 text-safety-success" />
+             
           </div>
           <div>
             <h1 className="text-3xl font-bold text-gradient">Worker Dashboard</h1>
@@ -206,6 +208,7 @@ const WorkerDashboard: React.FC<WorkerDashboardProps> = ({ onLogout }) => {
           </Card>
         </div>
       </div>
+     
     </div>
   );
 };
