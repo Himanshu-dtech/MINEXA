@@ -4,7 +4,7 @@ const pool = require('./db');
 const app = express();
 
 const PORT = 3000;
-
+const authRoutes = require('./routes/auth');
 app.use(cors({
   origin: 'http://localhost:8080',
 }));
@@ -185,6 +185,7 @@ app.patch('/api/v1/leave-requests/:id/cancel', async (req, res) => {
     });
   }
 });
+app.use('/api/v1/auth', authRoutes);
 app.listen(PORT, () => {
   console.log(`MINEXA API running on http://localhost:${PORT}`);
 });
