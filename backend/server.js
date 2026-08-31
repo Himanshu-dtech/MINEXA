@@ -139,6 +139,52 @@ app.get('/api/v1/leave-requests', async (req, res) => {
     });
   }
 });
+app.patch('/api/v1/leave-requests/:id/cancel', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `
+      UPDATE leave_requests
+      SET status = 'cancelled'
+      WHERE id = $1
+        AND status = 'pending'
+      RETURNING
+        id,
+        worker_id,
+        leave_type,
+        start_date,
+        end_date,
+        days,
+        reason,
+        status,
+        submitted_at
+      `,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        status: 'error',
+        message:
+          'Leave request not found or cannot be cancelled.',
+      });
+    }
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Leave request cancelled successfully',
+      request: result.rows[0],
+    });
+  } catch (error) {
+    console.error('Cancel leave request error:', error);
+
+    res.status(500).json({
+      status: 'error',
+      message: 'Failed to cancel leave request',
+    });
+  }
+});
 app.listen(PORT, () => {
   console.log(`MINEXA API running on http://localhost:${PORT}`);
 });

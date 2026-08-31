@@ -81,3 +81,27 @@ export async function createLeaveRequest(
 
   return data.request;
 }
+export async function cancelLeaveRequest(
+  id: number,
+): Promise<LeaveRequestApi> {
+  const response = await fetch(
+    `${API_URL}/leave-requests/${id}/cancel`,
+    {
+      method: 'PATCH',
+    },
+  );
+
+  if (!response.ok) {
+    const errorData =
+      await response.json().catch(() => null);
+
+    throw new Error(
+      errorData?.message ??
+        'Failed to cancel leave request',
+    );
+  }
+
+  const data = await response.json();
+
+  return data.request;
+}

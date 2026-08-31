@@ -22,8 +22,10 @@ import {
 import { useToast } from '@/hooks/use-toast';
 
 import {
+   cancelLeaveRequest,
   createLeaveRequest,
   getLeaveRequests,
+   
 } from '@/lib/api';
 
 const leaveRequestSchema = z
@@ -300,6 +302,8 @@ export default function LeaveManagementForm() {
 
   const [submitting, setSubmitting] =
     useState(false);
+  const [cancellingId, setCancellingId] =
+  useState<number | null>(null);
 
   const {
     toast,
@@ -578,30 +582,47 @@ export default function LeaveManagementForm() {
   // PATCH /api/v1/leave-requests/:id/cancel
   // --------------------------------------------------
 
-  const cancelRequest = (
-    id: number,
-  ) => {
-    setRequests(
-      (current) =>
-        current.map(
-          (request) =>
-            request.id === id
-              ? {
-                  ...request,
-                  status:
-                    'cancelled',
-                }
-              : request,
-        ),
+  const cancelRequest = async (id: number) => {
+  try {
+    setCancellingId(id);
+
+    const cancelledRequest =
+      await cancelLeaveRequest(id);
+
+    const updatedRequest =
+      mapApiRequest(cancelledRequest);
+
+    setRequests((current) =>
+      current.map((request) =>
+        request.id === id
+          ? updatedRequest
+          : request,
+      ),
     );
 
     toast({
-      title:
-        'Request cancelled locally',
+      title: 'Leave request cancelled',
       description:
-        'Database cancellation will be connected next.',
+        'The cancellation has been saved to the database.',
     });
-  };
+  } catch (error) {
+    console.error(
+      'Unable to cancel leave request:',
+      error,
+    );
+
+    toast({
+      title: 'Cancellation failed',
+      description:
+        error instanceof Error
+          ? error.message
+          : 'Unable to cancel the leave request.',
+      variant: 'destructive',
+    });
+  } finally {
+    setCancellingId(null);
+  }
+};
 
   return (
     <section
@@ -1088,22 +1109,21 @@ export default function LeaveManagementForm() {
                         }
                       </p>
                     </div>
-
-                    {request.status ===
-                      'pending' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          cancelRequest(
-                            request.id,
-                          )
-                        }
-                      >
-                        Cancel request
-                      </Button>
-                    )}
+{request.status === 'pending' && (
+  <Button
+    type="button"
+    variant="outline"
+    size="sm"
+    disabled={cancellingId === request.id}
+    onClick={() =>
+      cancelRequest(request.id)
+    }
+  >
+    {cancellingId === request.id
+      ? 'Cancelling...'
+      : 'Cancel request'}
+  </Button>
+)}
                   </div>
                 </div>
               ),
