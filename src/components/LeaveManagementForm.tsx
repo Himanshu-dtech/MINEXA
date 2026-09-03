@@ -156,7 +156,7 @@ const initialForm: LeaveForm = {
   reason: '',
 };
 
-const WORKER_ID = 1;
+
 
 const getWorkingDays = (
   startDate: string,
@@ -515,19 +515,13 @@ export default function LeaveManagementForm() {
 
       // Send request to Express
       const createdRequest =
-        await createLeaveRequest({
-          workerId: WORKER_ID,
-          leaveType:
-            result.data.leaveType,
-          startDate:
-            result.data.startDate,
-          endDate:
-            result.data.endDate,
-          days: requestDays,
-          reason:
-            result.data.reason,
-        });
-
+  await createLeaveRequest({
+    leaveType: result.data.leaveType,
+    startDate: result.data.startDate,
+    endDate: result.data.endDate,
+    days: requestDays,
+    reason: result.data.reason,
+  });
       // Convert API response into UI format
       const newRequest =
         mapApiRequest(
