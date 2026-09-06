@@ -3,8 +3,28 @@ const express = require('express');
 const pool = require('../db');
 const authenticateToken = require('../middleware/auth');
 const { requireRoles } = require('../middleware/roles');
-
+const {
+    sendSMS,
+    sendWhatsApp
+} = require('../services/notificationService');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
+const { sendEmail } = require('../services/emailService');
+
+function generateTemporaryPassword(length = 10) {
+    const chars =
+        'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+    let password = '';
+
+    for (let i = 0; i < length; i++) {
+        password += chars.charAt(
+            Math.floor(Math.random() * chars.length)
+        );
+    }
+
+    return password;
+}
 
 /*
 =================================================
@@ -140,6 +160,7 @@ router.post(
     requireRoles('SAFETY_OFFICER'),
     async (req, res) => {
         const client = await pool.connect();
+        let transactionCommitted = false;
 
         try {
             const registrationId = Number(
@@ -370,14 +391,18 @@ router.post(
             -----------------------------------------
             */
 
-            const emailResult = await client.query(
-                `
-                SELECT id
-                FROM users
-                WHERE LOWER(email) = LOWER($1)
-                `,
-                [registration.email]
-            );
+            let emailResult = { rows: [] };
+            
+            if (registration.email) {
+                emailResult = await client.query(
+                    `
+                    SELECT id
+                    FROM users
+                    WHERE LOWER(email) = LOWER($1)
+                    `,
+                    [registration.email]
+                );
+            }
 
             if (emailResult.rows.length > 0) {
                 await client.query('ROLLBACK');
@@ -426,6 +451,12 @@ router.post(
             CREATE ACTIVE USER
             -----------------------------------------
             */
+            const temporaryPassword = generateTemporaryPassword(10);
+
+            const temporaryPasswordHash = await bcrypt.hash(
+                temporaryPassword,
+                12
+            );
 
             const userResult = await client.query(
                 `
@@ -433,6 +464,7 @@ router.post(
                 (
                     name,
                     email,
+                    login_id,
                     password_hash,
                     role,
                     worker_id,
@@ -440,25 +472,29 @@ router.post(
                     account_status,
                     is_verified,
                     verified_at,
-                    mfa_enabled
+                    mfa_enabled,
+                    must_change_password
                 )
                 VALUES
                 (
                     $1,
                     $2,
                     $3,
-                    'FIELD_WORKER',
                     $4,
+                    'FIELD_WORKER',
                     $5,
+                    $6,
                     'ACTIVE',
                     TRUE,
                     CURRENT_TIMESTAMP,
-                    FALSE
+                    FALSE,
+                    TRUE
                 )
                 RETURNING
                     id,
                     name,
                     email,
+                    login_id,
                     role,
                     worker_id,
                     mine_id,
@@ -467,14 +503,14 @@ router.post(
                 [
                     registration.name,
                     registration.email,
-                    registration.password_hash,
+                    registration.employee_id,
+                    temporaryPasswordHash,
                     worker.id,
                     registration.mine_id
                 ]
             );
 
-            const user =
-                userResult.rows[0];
+            const user = userResult.rows[0];
 
             /*
             -----------------------------------------
@@ -528,16 +564,96 @@ router.post(
             );
 
             await client.query('COMMIT');
+            transactionCommitted = true;
 
+            // Send account activation notification
+            let emailNotification = null;
+            let smsNotification = null;
+            let whatsappNotification = null;
+const credentialMessage =
+    `Welcome to MINEMEXA!\n\n` +
+    `Your Field Worker account is now ACTIVE.\n\n` +
+    `User ID: ${registration.employee_id}\n` +
+    `Temporary Password: ${temporaryPassword}\n\n` +
+    `Please change your password after your first login.`;
+            
+            if (registration.email) {
+                try {
+emailNotification = await sendEmail({
+    to: registration.email,
+    subject: 'Welcome to MINEMEXA – Your Account is Active',
+    text:
+        `Hello ${registration.name},\n\n` +
+        `Welcome to MINEMEXA!\n\n` +
+        `Your Field Worker account has been approved and activated successfully.\n\n` +
+        `Login Credentials:\n` +
+        `User ID: ${registration.employee_id}\n` +
+        `Temporary Password: ${temporaryPassword}\n\n` +
+        `Login to MINEMEXA using these credentials.\n\n` +
+        `For security, you will be required to change your password after your first login.\n\n` +
+        `Regards,\n` +
+        `MINEMEXA Platform Team`
+});
+                } catch (emailError) {
+                    console.error(
+                        'Worker activation email failed:',
+                        emailError.message
+                    );
+                }
+            } else if (registration.phone) {
+                try {
+                    smsNotification = await sendSMS({
+                        workerId: worker.id,
+                        phone: registration.phone,
+                        notificationType: 'ACCOUNT_ACTIVE',
+                        message: credentialMessage
+                    });
+                } catch (notificationError) {
+                    console.error(
+                        'SMS notification failed:',
+                        notificationError.message
+                    );
+                }
+            
+                try {
+                    whatsappNotification = await sendWhatsApp({
+                        workerId: worker.id,
+                        phone: registration.phone,
+                        notificationType: 'ACCOUNT_ACTIVE',
+                        message: credentialMessage
+                    });
+                } catch (notificationError) {
+                    console.error(
+                        'WhatsApp notification failed:',
+                        notificationError.message
+                    );
+                }
+            }
+            
+            console.log('Worker account activated successfully');
             return res.status(200).json({
                 status: 'success',
                 message:
                     'Worker safety verified. Account is now active.',
                 worker,
-                user
+                user,
+                notifications: {
+                    email: emailNotification
+                        ? 'SENT'
+                        : 'NOT_SENT',
+                    sms: smsNotification
+                        ? 'SENT'
+                        : 'NOT_SENT',
+                    whatsapp: whatsappNotification
+                        ? 'SENT'
+                        : 'NOT_SENT'
+                }
             });
+
         } catch (error) {
-            await client.query('ROLLBACK');
+            if (!transactionCommitted) {
+                await client.query('ROLLBACK');
+            }
 
             console.error(
                 'Safety verification error:',
@@ -567,7 +683,7 @@ router.post(
     requireRoles('SAFETY_OFFICER'),
     async (req, res) => {
         const client = await pool.connect();
-
+        let transactionCommitted = false;
         try {
             const registrationId = Number(
                 req.params.id
@@ -726,16 +842,89 @@ router.post(
                     reason
                 ]
             );
-
+            
             await client.query('COMMIT');
-
+            transactionCommitted = true;
+            
+            // Send rejection notification
+           const rejectionMessage =
+    `MINEMEXA: Your registration has been rejected during safety verification.\n\n` +
+    `Reason: ${reason}\n\n` +
+    `Please contact the mine administrator for further information.`;
+            let emailNotification = null;
+            let smsNotification = null;
+            let whatsappNotification = null;
+            
+            if (registration.email) {
+                try {
+                    emailNotification = await sendEmail({
+                        to: registration.email,
+                      subject: 'MINEMEXA Registration Rejected',
+                      text:
+    `Hello ${registration.name},\n\n` +
+    `Your MINEMEXA Field Worker registration has been rejected during safety verification.\n\n` +
+    `Reason:\n${reason}\n\n` +
+    `Please contact the mine administrator for further information.\n\n` +
+    `Regards,\n` +
+    `MINEMEXA Platform Team`
+                    });
+                } catch (emailError) {
+                    console.error(
+                        'Safety rejection email failed:',
+                        emailError.message
+                    );
+                }
+            } else if (registration.phone) {
+                try {
+                    smsNotification = await sendSMS({
+                        workerId: null,
+                        phone: registration.phone,
+                        notificationType: 'APPLICATION_REJECTED',
+                        message: rejectionMessage
+                    });
+                } catch (notificationError) {
+                    console.error(
+                        'Rejection SMS failed:',
+                        notificationError.message
+                    );
+                }
+            
+                try {
+                    whatsappNotification = await sendWhatsApp({
+                        workerId: null,
+                        phone: registration.phone,
+                        notificationType: 'APPLICATION_REJECTED',
+                        message: rejectionMessage
+                    });
+                } catch (notificationError) {
+                    console.error(
+                        'Rejection WhatsApp failed:',
+                        notificationError.message
+                    );
+                }
+            }
+            
             return res.status(200).json({
                 status: 'success',
                 message:
-                    'Worker failed safety verification and was rejected.'
+                    'Worker failed safety verification and was rejected.',
+                notifications: {
+                    email: emailNotification
+                        ? 'SENT'
+                        : 'NOT_SENT',
+                    sms: smsNotification
+                        ? 'SENT'
+                        : 'NOT_SENT',
+                    whatsapp: whatsappNotification
+                        ? 'SENT'
+                        : 'NOT_SENT'
+                }
             });
+
         } catch (error) {
-            await client.query('ROLLBACK');
+            if (!transactionCommitted) {
+                await client.query('ROLLBACK');
+            }
 
             console.error(
                 'Safety rejection error:',

@@ -8,6 +8,9 @@ const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 const managerRoutes = require('./routes/manager');
 const { requireRoles } = require('./middleware/roles');
+const applicationRoutes = require('./routes/application');
+const workerRoutes = require('./routes/workers');
+const attendanceRoutes = require('./routes/attendance');
 
 const safetyRoutes = require('./routes/safety');
 
@@ -19,6 +22,9 @@ app.use(express.json());
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/manager', managerRoutes);
 app.use('/api/v1/safety', safetyRoutes);
+app.use('/api/v1/application', applicationRoutes);
+app.use('/api/v1/workers', workerRoutes);
+app.use('/api/v1/attendance',attendanceRoutes);
 
 app.get('/api/v1/health', (req, res) => {
   res.json({

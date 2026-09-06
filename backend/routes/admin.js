@@ -1,10 +1,26 @@
 const express = require('express');
-
+const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const authenticateToken = require('../middleware/auth');
 const { requireRoles } = require('../middleware/roles');
-
+const { sendSMS, sendWhatsApp } = require('../services/notificationService'); // Added sendWhatsApp
 const router = express.Router();
+const { sendEmail } = require('../services/emailService');
+
+function generateTemporaryPassword(length = 10) {
+    const chars =
+        'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+    let password = '';
+
+    for (let i = 0; i < length; i++) {
+        password += chars.charAt(
+            Math.floor(Math.random() * chars.length)
+        );
+    }
+
+    return password;
+}
 
 /*
 =================================================
@@ -83,6 +99,7 @@ router.post(
     requireRoles('PLATFORM_ADMIN'),
     async (req, res) => {
         const client = await pool.connect();
+        let transactionCommitted = false;
 
         try {
             const registrationId = Number(req.params.id);
@@ -140,14 +157,18 @@ router.post(
             -----------------------------------------
             */
 
-            const existingUser = await client.query(
-                `
-                SELECT id
-                FROM users
-                WHERE LOWER(email) = LOWER($1)
-                `,
-                [registration.email]
-            );
+            let existingUser = { rows: [] };
+            
+            if (registration.email) {
+                existingUser = await client.query(
+                    `
+                    SELECT id
+                    FROM users
+                    WHERE LOWER(email) = LOWER($1)
+                    `,
+                    [registration.email]
+                );
+            }
 
             if (existingUser.rows.length > 0) {
                 await client.query('ROLLBACK');
@@ -168,57 +189,55 @@ router.post(
             a worker. Worker still needs safety verification.
             */
 
-            if (
-    registration.requested_role ===
-    'FIELD_WORKER'
-) {
-    await client.query(
-        `
-        INSERT INTO approval_actions
-        (
-            registration_id,
-            reviewer_id,
-            action,
-            comments
-        )
-        VALUES
-        (
-            $1,
-            $2,
-            'ADMIN_APPROVED',
-            $3
-        )
-        `,
-        [
-            registration.id,
-            req.user.userId,
-            'Approved by Platform Admin'
-        ]
-    );
+            if (registration.requested_role === 'FIELD_WORKER') {
+                await client.query(
+                    `
+                    INSERT INTO approval_actions
+                    (
+                        registration_id,
+                        reviewer_id,
+                        action,
+                        comments
+                    )
+                    VALUES
+                    (
+                        $1,
+                        $2,
+                        'ADMIN_APPROVED',
+                        $3
+                    )
+                    `,
+                    [
+                        registration.id,
+                        req.user.userId,
+                        'Approved by Platform Admin'
+                    ]
+                );
 
-    await client.query(
-        `
-        UPDATE registration_requests
-        SET
-            status = 'UNDER_REVIEW',
-            reviewed_at = CURRENT_TIMESTAMP,
-            reviewed_by = $1
-        WHERE id = $2
-        `,
-        [
-            req.user.userId,
-            registration.id
-        ]
-    );
+                await client.query(
+                    `
+                    UPDATE registration_requests
+                    SET
+                        status = 'UNDER_REVIEW',
+                        reviewed_at = CURRENT_TIMESTAMP,
+                        reviewed_by = $1
+                    WHERE id = $2
+                    `,
+                    [
+                        req.user.userId,
+                        registration.id
+                    ]
+                );
 
-    await client.query('COMMIT');
+                await client.query('COMMIT');
+                transactionCommitted = true;
 
-    return res.status(200).json({
-        status: 'success',
-        message:
-            'Worker registration approved by Platform Admin. Mine Manager and Safety verification are still required.'
-    });
-}
+                return res.status(200).json({
+                    status: 'success',
+                    message:
+                        'Worker registration approved by Platform Admin. Mine Manager and Safety verification are still required.'
+                });
+            }
 
             /*
             -----------------------------------------
@@ -228,29 +247,33 @@ router.post(
 
             let userId;
 
-            /*
-            Create worker record only for FIELD_WORKER.
-            */
-
             if (
-                registration.requested_role ===
-                'MINE_MANAGER' ||
-                registration.requested_role ===
-                'SAFETY_OFFICER'
+                registration.requested_role === 'MINE_MANAGER' ||
+                registration.requested_role === 'SAFETY_OFFICER'
             ) {
+                const temporaryPassword = generateTemporaryPassword(10);
+                const temporaryPasswordHash = await bcrypt.hash(temporaryPassword, 12);
+                
+                const loginId =
+                    registration.requested_role === 'MINE_MANAGER'
+                        ? `MGR-${registration.id}`
+                        : `SAFE-${registration.id}`;
+
                 const userResult = await client.query(
                     `
                     INSERT INTO users
                     (
                         name,
                         email,
+                        login_id,
                         password_hash,
                         role,
                         mine_id,
                         account_status,
                         is_verified,
                         verified_at,
-                        mfa_enabled
+                        mfa_enabled,
+                        must_change_password
                     )
                     VALUES
                     (
@@ -259,92 +282,138 @@ router.post(
                         $3,
                         $4,
                         $5,
+                        $6,
                         'ACTIVE',
                         TRUE,
                         CURRENT_TIMESTAMP,
-                        FALSE
+                        FALSE,
+                        TRUE
                     )
-                    RETURNING id
+                    RETURNING
+                        id,
+                        name,
+                        email,
+                        login_id,
+                        role,
+                        mine_id,
+                        account_status
                     `,
                     [
                         registration.name,
                         registration.email,
-                        registration.password_hash,
+                        loginId,
+                        temporaryPasswordHash,
                         registration.requested_role,
                         registration.mine_id
                     ]
                 );
 
                 userId = userResult.rows[0].id;
+
+                /*
+                -----------------------------------------
+                RECORD ADMIN APPROVAL
+                -----------------------------------------
+                */
+
+                await client.query(
+                    `
+                    INSERT INTO approval_actions
+                    (
+                        registration_id,
+                        reviewer_id,
+                        action,
+                        comments
+                    )
+                    VALUES
+                    (
+                        $1,
+                        $2,
+                        'APPROVED',
+                        $3
+                    )
+                    `,
+                    [
+                        registration.id,
+                        req.user.userId,
+                        `Approved ${registration.requested_role} registration`
+                    ]
+                );
+
+                /*
+                -----------------------------------------
+                UPDATE REGISTRATION
+                -----------------------------------------
+                */
+
+                await client.query(
+                    `
+                    UPDATE registration_requests
+                    SET
+                        status = 'APPROVED',
+                        reviewed_at = CURRENT_TIMESTAMP,
+                        reviewed_by = $1
+                    WHERE id = $2
+                    `,
+                    [
+                        req.user.userId,
+                        registration.id
+                    ]
+                );
+
+                await client.query('COMMIT');
+                transactionCommitted = true;
+                let emailNotification = null;
+
+                const roleName =
+                    registration.requested_role === 'MINE_MANAGER'
+                        ? 'Mine Manager'
+                        : 'Safety Officer';
+
+const welcomeMessage =
+    `Hello ${registration.name},\n\n` +
+    `Welcome to MINEMEXA!\n\n` +
+    `Your ${roleName} account has been approved and activated successfully.\n\n` +
+    `Login Credentials:\n` +
+    `User ID: ${loginId}\n` +
+    `Temporary Password: ${temporaryPassword}\n\n` +
+    `Login to MINEMEXA using these credentials.\n\n` +
+    `For security, you will be required to change your password after your first login.\n\n` +
+    `Regards,\n` +
+    `MINEMEXA Platform Team`;
+
+                if (registration.email) {
+                    try {
+                        emailNotification = await sendEmail({
+                            to: registration.email,
+                           subject: `Welcome to MINEMEXA – Your Account is Active`,
+                            text: welcomeMessage
+                        });
+                    } catch (emailError) {
+                        console.error(
+                            'Activation email failed:',
+                            emailError.message
+                        );
+                    }
+                }
+
+                return res.status(200).json({
+                    status: 'success',
+                    message:
+                        'Registration approved and account activated.',
+                    userId: userId || null
+                });
             }
-
-            /*
-            -----------------------------------------
-            RECORD ADMIN APPROVAL
-            -----------------------------------------
-            */
-
-            await client.query(
-                `
-                INSERT INTO approval_actions
-                (
-                    registration_id,
-                    reviewer_id,
-                    action,
-                    comments
-                )
-                VALUES
-                (
-                    $1,
-                    $2,
-                    'APPROVED',
-                    $3
-                )
-                `,
-                [
-                    registration.id,
-                    req.user.userId,
-                    `Approved ${registration.requested_role} registration`
-                ]
-            );
-
-            /*
-            -----------------------------------------
-            UPDATE REGISTRATION
-            -----------------------------------------
-            */
-
-            await client.query(
-                `
-                UPDATE registration_requests
-                SET
-                    status = 'APPROVED',
-                    reviewed_at = CURRENT_TIMESTAMP,
-                    reviewed_by = $1
-                WHERE id = $2
-                `,
-                [
-                    req.user.userId,
-                    registration.id
-                ]
-            );
-
-            await client.query('COMMIT');
-
-            return res.status(200).json({
-                status: 'success',
-                message:
-                    'Registration approved and account activated.',
-                userId: userId || null
-            });
         } catch (error) {
-            await client.query('ROLLBACK');
+            if (!transactionCommitted) {
+                await client.query('ROLLBACK');
+            }
 
             console.error(
                 'Admin approval error:',
                 error
             );
-
+            
             return res.status(500).json({
                 status: 'error',
                 message:
@@ -369,7 +438,8 @@ router.post(
     requireRoles('PLATFORM_ADMIN'),
     async (req, res) => {
         const client = await pool.connect();
-
+        let transactionCommitted = false;
+        
         try {
             const registrationId = Number(req.params.id);
 
@@ -399,7 +469,13 @@ router.post(
 
             const result = await client.query(
                 `
-                SELECT id, status
+                SELECT
+                    id,
+                    name,
+                    email,
+                    status,
+                    phone,
+                    requested_role
                 FROM registration_requests
                 WHERE id = $1
                 FOR UPDATE
@@ -475,14 +551,76 @@ router.post(
             );
 
             await client.query('COMMIT');
+            transactionCommitted = true;
+
+            const notificationsSent = [];
+
+            // Email fallback logic
+            if (registration.email) {
+                try {
+                    await sendEmail({
+                        to: registration.email,
+                        subject: 'MINEMEXA Registration Rejected',
+                       text:
+    `Hello ${registration.name},\n\n` +
+    `Your MINEMEXA registration request has been rejected.\n\n` +
+    `Reason:\n${reason}\n\n` +
+    `Please contact the appropriate mine administrator if you believe this was incorrect.\n\n` +
+    `Regards,\n` +
+    `MINEMEXA Platform Team`
+                    });
+                    notificationsSent.push({ type: 'EMAIL', status: 'SENT' });
+                } catch (emailError) {
+                    console.error('Rejection email failed:', emailError.message);
+                    notificationsSent.push({ type: 'EMAIL', status: 'FAILED' });
+                }
+            } else if (registration.requested_role === 'FIELD_WORKER' && registration.phone) {
+               const rejectionMessage =
+    `MINEMEXA: Your registration has been rejected.\n\n` +
+    `Reason: ${reason}\n\n` +
+    `Please contact the mine administrator for further information.`;
+                
+                // SMS Fallback
+                try {
+                    await sendSMS({
+                        workerId: null,
+                        phone: registration.phone,
+                        notificationType: 'APPLICATION_REJECTED',
+                        message: rejectionMessage
+                    });
+                    notificationsSent.push({ type: 'SMS', status: 'SENT' });
+                } catch (smsError) {
+                    console.error('Admin rejection SMS failed:', smsError.message);
+                    notificationsSent.push({ type: 'SMS', status: 'FAILED' });
+                }
+
+                // WhatsApp Fallback
+                if (typeof sendWhatsApp === 'function') {
+                    try {
+                        await sendWhatsApp({
+                            workerId: null,
+                            phone: registration.phone,
+                            notificationType: 'APPLICATION_REJECTED',
+                            message: rejectionMessage
+                        });
+                        notificationsSent.push({ type: 'WHATSAPP', status: 'SENT' });
+                    } catch (waError) {
+                        console.error('Admin rejection WhatsApp failed:', waError.message);
+                        notificationsSent.push({ type: 'WHATSAPP', status: 'FAILED' });
+                    }
+                }
+            }
 
             return res.status(200).json({
                 status: 'success',
-                message:
-                    'Registration request rejected.'
+                message: 'Registration request rejected.',
+                notifications: notificationsSent
             });
+
         } catch (error) {
-            await client.query('ROLLBACK');
+            if (!transactionCommitted) {
+                await client.query('ROLLBACK');
+            }
 
             console.error(
                 'Admin rejection error:',

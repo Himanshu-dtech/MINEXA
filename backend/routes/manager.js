@@ -3,6 +3,11 @@ const express = require('express');
 const pool = require('../db');
 const authenticateToken = require('../middleware/auth');
 const { requireRoles } = require('../middleware/roles');
+const {
+    sendSMS,
+    sendWhatsApp
+} = require('../services/notificationService');
+const { sendEmail } = require('../services/emailService');
 
 const router = express.Router();
 
@@ -69,7 +74,13 @@ router.get(
                     ON m.id = r.mine_id
                 WHERE r.requested_role = 'FIELD_WORKER'
                   AND r.mine_id = $1
-                  AND r.status IN ('PENDING', 'UNDER_REVIEW')
+                  AND r.status = 'UNDER_REVIEW'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM approval_actions a
+                      WHERE a.registration_id = r.id
+                        AND a.action = 'ADMIN_APPROVED'
+                  )
                 ORDER BY r.submitted_at ASC
                 `,
                 [mineId]
@@ -113,7 +124,7 @@ router.post(
     requireRoles('MINE_MANAGER'),
     async (req, res) => {
         const client = await pool.connect();
-
+        let transactionCommitted = false;
         try {
             const registrationId = Number(
                 req.params.id
@@ -240,17 +251,34 @@ router.post(
             -----------------------------------------
             */
 
-            if (
-                !['PENDING', 'UNDER_REVIEW'].includes(
-                    registration.status
-                )
-            ) {
+            if (registration.status !== 'UNDER_REVIEW') {
                 await client.query('ROLLBACK');
 
                 return res.status(409).json({
                     status: 'error',
                     message:
                         'This registration has already been processed.'
+                });
+            }
+            
+            const adminApprovalResult = await client.query(
+                `
+                SELECT id
+                FROM approval_actions
+                WHERE registration_id = $1
+                  AND action = 'ADMIN_APPROVED'
+                LIMIT 1
+                `,
+                [registrationId]
+            );
+            
+            if (adminApprovalResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+            
+                return res.status(409).json({
+                    status: 'error',
+                    message:
+                        'Platform Admin approval is required before manager approval.'
                 });
             }
 
@@ -333,14 +361,16 @@ router.post(
             );
 
             await client.query('COMMIT');
-
+            transactionCommitted = true;
             return res.status(200).json({
                 status: 'success',
                 message:
                     'Worker approved by Mine Manager. Safety verification is now required.'
             });
         } catch (error) {
-            await client.query('ROLLBACK');
+            if (!transactionCommitted) {
+                await client.query('ROLLBACK');
+            }
 
             console.error(
                 'Manager worker approval error:',
@@ -371,7 +401,7 @@ router.post(
     requireRoles('MINE_MANAGER'),
     async (req, res) => {
         const client = await pool.connect();
-
+        let transactionCommitted = false;
         try {
             const registrationId = Number(
                 req.params.id
@@ -522,14 +552,84 @@ router.post(
             );
 
             await client.query('COMMIT');
-
+            transactionCommitted = true;
+            
+            // Send rejection notification
+const rejectionMessage =
+    `MINEMEXA: Your registration has been rejected by the Mine Manager.\n\n` +
+    `Reason: ${reason}\n\n` +
+    `Please contact the mine administrator for further information.`;
+            let emailNotification = null;
+            let smsNotification = null;
+            let whatsappNotification = null;
+            
+            if (registration.email) {
+                try {
+                    emailNotification = await sendEmail({
+                        to: registration.email,
+                       subject: 'MINEMEXA Registration Rejected',
+text:
+    `Hello ${registration.name},\n\n` +
+    `Your MINEMEXA Field Worker registration has been rejected by the Mine Manager.\n\n` +
+    `Reason:\n${reason}\n\n` +
+    `Regards,\n` +
+    `MINEMEXA Platform Team`
+                    });
+                } catch (emailError) {
+                    console.error(
+                        'Manager rejection email failed:',
+                        emailError.message
+                    );
+                }
+            } else if (registration.phone) {
+                try {
+                    smsNotification = await sendSMS({
+                        workerId: null,
+                        phone: registration.phone,
+                        notificationType: 'APPLICATION_REJECTED',
+                        message: rejectionMessage
+                    });
+                } catch (notificationError) {
+                    console.error(
+                        'Manager rejection SMS failed:',
+                        notificationError.message
+                    );
+                }
+            
+                try {
+                    whatsappNotification = await sendWhatsApp({
+                        workerId: null,
+                        phone: registration.phone,
+                        notificationType: 'APPLICATION_REJECTED',
+                        message: rejectionMessage
+                    });
+                } catch (notificationError) {
+                    console.error(
+                        'Manager rejection WhatsApp failed:',
+                        notificationError.message
+                    );
+                }
+            }
+            
             return res.status(200).json({
                 status: 'success',
-                message:
-                    'Worker registration rejected.'
+                message: 'Worker registration rejected.',
+                notifications: {
+                    email: emailNotification
+                        ? 'SENT'
+                        : 'NOT_SENT',
+                    sms: smsNotification
+                        ? 'SENT'
+                        : 'NOT_SENT',
+                    whatsapp: whatsappNotification
+                        ? 'SENT'
+                        : 'NOT_SENT'
+                }
             });
         } catch (error) {
-            await client.query('ROLLBACK');
+            if (!transactionCommitted) {
+                await client.query('ROLLBACK');
+            }
 
             console.error(
                 'Manager worker rejection error:',
