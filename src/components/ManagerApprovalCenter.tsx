@@ -23,8 +23,8 @@ import { useToast } from '@/hooks/use-toast';
 type RegistrationRequest = {
   id: number;
   name: string;
-  email: string;
-  phone?: string | null;
+  email?: string| null;
+  phone: string ;
 
   requested_role:
     | 'FIELD_WORKER'
@@ -153,9 +153,6 @@ export default function ManagerApprovalCenter() {
     );
   }, [registrations, search]);
 
-  const pendingCount = registrations.filter(
-    (item) => item.status === 'PENDING'
-  ).length;
 
   const underReviewCount = registrations.filter(
     (item) => item.status === 'UNDER_REVIEW'
@@ -327,10 +324,10 @@ export default function ManagerApprovalCenter() {
           />
 
           <SummaryCard
-            icon={Clock3}
-            label="Pending"
-            value={pendingCount}
-          />
+  icon={Clock3}
+  label="Awaiting manager review"
+  value={registrations.length}
+/>
 
           <SummaryCard
             icon={ShieldAlert}

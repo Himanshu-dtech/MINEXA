@@ -159,14 +159,16 @@ export type LoginResponse = {
   user: {
     id: number;
     name: string;
-    email: string;
+    email: string | null;
+    loginId: string | null;
     role: string;
     workerId: number | null;
+    mustChangePassword: boolean;
   };
 };
 
 export async function loginUser(
-  email: string,
+  identifier: string,
   password: string,
 ): Promise<LoginResponse> {
   const response = await fetch(
@@ -177,7 +179,7 @@ export async function loginUser(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        email,
+        identifier,
         password,
       }),
     },
@@ -196,22 +198,55 @@ export async function loginUser(
 
   return data;
 }
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/auth/change-password`,
+    {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        currentPassword,
+        newPassword,
+      }),
+    },
+  );
+
+  const data = await response
+    .json()
+    .catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ??
+        'Failed to change password.',
+    );
+  }
+}
 
 export type AuthUserApi = {
   id: number;
   name: string;
-  email: string;
+  email: string | null;
+  loginId?: string | null;
+
   role:
     | 'PLATFORM_ADMIN'
     | 'MINE_MANAGER'
     | 'SAFETY_OFFICER'
     | 'FIELD_WORKER';
+
   workerId: number | null;
+
   employeeCode?: string | null;
   accountStatus?: string;
   isVerified?: boolean;
   verifiedAt?: string | null;
   mfaEnabled?: boolean;
+
+  mustChangePassword?: boolean;
 };
 
 export async function getCurrentUser(): Promise<AuthUserApi> {
@@ -265,8 +300,8 @@ export type RegistrationStatus =
 export type RegistrationRequest = {
   id: number;
   name: string;
-  email: string;
-  phone?: string | null;
+  email?: string;
+  phone: string | null;
 
   requested_role: RegistrationRole;
 
@@ -299,9 +334,8 @@ export type Mine = {
 
 export type RegisterPayload = {
   name: string;
-  email: string;
-  phone?: string;
-  password: string;
+  email?: string;
+  phone: string;
 
   requestedRole: RegistrationRole;
 

@@ -36,8 +36,8 @@ type RegistrationStatus =
 type RegistrationRequest = {
   id: number;
   name: string;
-  email: string;
-  phone?: string | null;
+  email?: string | null;
+  phone: string ;
 
   requested_role: RegistrationRole;
 

@@ -85,22 +85,26 @@ import { useToast } from '@/hooks/use-toast';
 import heroBg from '@/assets/hero-bg.jpg';
 import LeaveManagementForm from '@/components/LeaveManagementForm';
 import WorkerHealth from './WorkerHealth';
+import ApplicationStatus from './ApplicationStatus';
 import AdminApprovalCenter from './AdminApprovalCenter';
 import ManagerApprovalCenter from './ManagerApprovalCenter';
 import SafetyVerificationCenter from './SafetyVerificationCenter';
+import ChangePassword from './ChangePassword';
 
 type Role = 'admin' | 'manager' | 'safety' | 'worker';
-type View = 'dashboard' | 'mine' | 'safety' | 'workers' | 'equipment' | 'analytics' | 'reports' | 'admin' | 'leave' | 'settings' |'health'| 'safety-verification'|'worker-approvals';
+type View = 'dashboard' | 'mine' | 'safety' | 'workers' | 'equipment' | 'analytics' | 'reports' | 'admin' | 'leave' | 'settings' |'health'| 'safety-verification'|'worker-approvals'| 'application-status';
 type AuthUser = {
   id: number;
   name: string;
-  email: string;
+  email: string | null;
   role:
     | 'PLATFORM_ADMIN'
     | 'MINE_MANAGER'
     | 'SAFETY_OFFICER'
     | 'FIELD_WORKER';
   workerId: number | null;
+  loginId?: string | null;
+  mustChangePassword?: boolean;
 };
 const backendRoleToAppRole: Record<
   string,
@@ -138,6 +142,12 @@ const navItems: { id: View; label: string; icon: React.ElementType; section?: st
   { id: 'mine', label: 'Live mine map', icon: Map },
   { id: 'safety', label: 'Safety & alerts', icon: ShieldCheck },
   { id: 'workers', label: 'Workforce', icon: Users },
+  {
+  id: 'application-status',
+  label: 'Application status',
+  icon: ShieldCheck,
+  section: 'Worker services',
+},
 
 {
   id: 'worker-approvals',
@@ -169,7 +179,7 @@ const roleAccess: Record<Role, View[]> = {
   admin: ['dashboard', 'workers', 'analytics', 'reports', 'admin', 'settings'],
   manager: ['dashboard', 'mine', 'safety', 'workers', 'equipment', 'analytics', 'reports', 'settings','worker-approvals',],
   safety: ['dashboard', 'mine', 'safety', 'workers', 'analytics', 'reports', 'settings','safety-verification'],
-  worker: ['dashboard', 'leave', 'settings','health'],
+  worker: ['dashboard', 'leave', 'settings','health','application-status',],
 };
 
 const alerts = [
@@ -248,7 +258,8 @@ function Login({
   onLogin: (role: Role, user: AuthUser) => void;
   onSignup: () => void;
 }) {
- const [email, setEmail] = useState('');
+const [identifier, setIdentifier] =
+  useState('');
 const [password, setPassword] = useState('');
 
   const [loading, setLoading] =
@@ -266,9 +277,9 @@ const [password, setPassword] = useState('');
 
     setError('');
 
-    if (!email.trim() || !password) {
+    if (!identifier.trim() || !password) {
       setError(
-        'Please enter your email and password.',
+        'Please enter your User ID or Email and password.',
       );
       return;
     }
@@ -277,7 +288,7 @@ const [password, setPassword] = useState('');
       setLoading(true);
 
       const data = await loginUser(
-        email.trim(),
+        identifier.trim(),
         password,
       );
 
@@ -318,13 +329,16 @@ switch (data.user.role) {
       );
 
       // Open the correct dashboard with the authenticated user
-      onLogin(appRole, {
-        id: data.user.id,
-        name: data.user.name,
-        email: data.user.email,
-        role: data.user.role,
-        workerId: data.user.workerId,
-      });
+onLogin(appRole, {
+  id: data.user.id,
+  name: data.user.name,
+  email: data.user.email,
+  role: data.user.role,
+  workerId: data.user.workerId,
+  loginId: data.user.loginId,
+  mustChangePassword:
+    data.user.mustChangePassword,
+});
     } catch (err) {
       console.error(
         'Login failed:',
@@ -413,24 +427,23 @@ return (
           className="mt-8 space-y-5"
           onSubmit={handleSubmit}
         >
-          {/* Email */}
+          {/* User ID / Email */}
           <div>
             <label
-              htmlFor="email"
+              htmlFor="identifier"
               className="mb-2 block text-xs font-semibold text-foreground"
             >
-              Work email
+              User ID or Email
             </label>
 
             <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) =>
-                setEmail(e.target.value)
-              }
+              id="identifier"
+              type="text"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="MW-TEST02 or you@minexa.com"
               disabled={loading}
-              autoComplete="email"
+              autoComplete="username"
             />
           </div>
 
@@ -685,8 +698,7 @@ function Signup({
     name: '',
     email: '',
     phone: '',
-    password: '',
-    confirmPassword: '',
+  
 
     mineId: '',
     employeeId: '',
@@ -752,18 +764,16 @@ function Signup({
       setError('Please select a role.');
       return;
     }
+if (!form.name.trim()) {
+  setError('Full name is required.');
+  return;
+}
 
-    if (form.password !== form.confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-
-    if (form.password.length < 8) {
-      setError(
-        'Password must contain at least 8 characters.'
-      );
-      return;
-    }
+if (!form.phone.trim()) {
+  setError('Phone number is required.');
+  return;
+}
+ 
 
     if (!form.mineId) {
       setError('Please select your mine.');
@@ -777,6 +787,7 @@ function Signup({
       setError('Employee ID is required for Field Workers.');
       return;
     }
+    
 
     if (
       selectedRole === 'SAFETY_OFFICER' &&
@@ -793,9 +804,9 @@ function Signup({
 
       const result = await registerUser({
         name: form.name.trim(),
-        email: form.email.trim(),
+       email: form.email.trim() || undefined,
         phone: form.phone.trim(),
-        password: form.password,
+        
 
         requestedRole: selectedRole,
 
@@ -1149,19 +1160,20 @@ function Signup({
                   Work email
                 </label>
 
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) =>
-                    updateField(
-                      'email',
-                      e.target.value
-                    )
-                  }
-                  required
-                  placeholder="name@company.com"
-                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none placeholder:text-slate-600 focus:border-emerald-400/60"
-                />
+ <input
+  type="email"
+  value={form.email}
+  onChange={(e) =>
+    updateField('email', e.target.value)
+  }
+  required={selectedRole !== 'FIELD_WORKER'}
+  placeholder={
+    selectedRole === 'FIELD_WORKER'
+      ? 'name@company.com (optional)'
+      : 'name@company.com'
+  }
+  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none placeholder:text-slate-600 focus:border-emerald-400/60"
+/>
               </div>
 
               <div>
@@ -1177,50 +1189,15 @@ function Signup({
                       e.target.value
                     )
                   }
+                  required
                   placeholder="+91 XXXXX XXXXX"
                   className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none placeholder:text-slate-600 focus:border-emerald-400/60"
                 />
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm text-slate-300">
-                  Password
-                </label>
 
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) =>
-                    updateField(
-                      'password',
-                      e.target.value
-                    )
-                  }
-                  required
-                  placeholder="Minimum 8 characters"
-                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none placeholder:text-slate-600 focus:border-emerald-400/60"
-                />
-              </div>
 
-              <div>
-                <label className="mb-2 block text-sm text-slate-300">
-                  Confirm password
-                </label>
 
-                <input
-                  type="password"
-                  value={form.confirmPassword}
-                  onChange={(e) =>
-                    updateField(
-                      'confirmPassword',
-                      e.target.value
-                    )
-                  }
-                  required
-                  placeholder="Repeat your password"
-                  className="w-full rounded-xl border border-white/10 bg-black/20 px-4 py-3 outline-none placeholder:text-slate-600 focus:border-emerald-400/60"
-                />
-              </div>
 
             </div>
           </section>
@@ -1429,7 +1406,7 @@ function AppShell({
   const pageTitle = navItems.find((item) => item.id === activeView)?.label ?? 'Command center';
   return <div className="min-h-screen bg-background text-foreground"><div className={cx('fixed inset-0 z-40 bg-background/60 backdrop-blur-sm transition-opacity lg:hidden', sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0')} onClick={() => setSidebarOpen(false)} /><aside className={cx('fixed inset-y-0 left-0 z-50 flex w-[268px] flex-col border-r border-border bg-surface transition-transform lg:translate-x-0', sidebarOpen ? 'translate-x-0' : '-translate-x-full')}><div className="flex h-[76px] items-center border-b border-border px-5"><LogoMark /></div><div className="flex-1 overflow-y-auto px-3 py-5"><p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Navigation</p><nav className="space-y-1">{filteredNav.map((item, index) => { const Icon = item.icon; return <React.Fragment key={item.id}>{item.section && index !== 0 && <p className="mb-3 mt-7 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">{item.section}</p>}<Button variant={activeView === item.id ? 'secondary' : 'ghost'} onClick={() => selectView(item.id)} className={cx('w-full justify-start gap-3 px-3 text-xs', activeView === item.id && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary')}><Icon className="h-4 w-4" />{item.label}{item.id === 'safety' && <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-safety-danger/15 px-1.5 text-[10px] font-bold text-safety-danger">4</span>}</Button></React.Fragment>})}</nav></div><div className="border-t border-border p-3"><Button variant="ghost" className="w-full justify-start gap-3 px-3 text-xs" onClick={() => selectView('settings')}><Settings className="h-4 w-4" /> Workspace settings</Button><div className="mt-2 flex items-center gap-3 rounded-lg bg-secondary/60 p-3"><span className={cx('flex h-8 w-8 items-center justify-center rounded-full bg-background', meta.color)}><RoleIcon className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{user?.name ?? 'Worker'}</p><p className="truncate text-[10px] text-muted-foreground">{meta.label}</p></div><Button variant="ghost" size="icon" className="h-7 w-7" onClick={onLogout} aria-label="Log out"><LogOut className="h-3.5 w-3.5" /></Button></div></div></aside><div className="lg:pl-[268px]"><header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu className="h-5 w-5" /></Button><div className="hidden sm:block"><p className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Workspace / <span className="text-foreground">{pageTitle}</span></p><div className="mt-1 flex items-center gap-2 text-xs font-semibold"><span className="h-1.5 w-1.5 rounded-full bg-primary" /> Pit 04 · Jharkhand Operations</div></div><div className="sm:hidden"><LogoMark /></div></div><div className="flex items-center gap-2"><div className="relative hidden w-56 md:block"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search workspace" className="h-9 pl-9 text-xs" /></div><Button variant="ghost" size="icon" className="relative" onClick={() => setNotifications(!notifications)} aria-label="Notifications"><Bell className="h-[18px] w-[18px]" /><span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-safety-danger" /></Button><Button variant="outline" size="sm" className="hidden gap-2 sm:inline-flex"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">HK</span><ChevronDown className="h-3 w-3" /></Button></div></header><main className="mx-auto max-w-[1540px] px-4 py-6 sm:px-6 lg:px-8">{activeView === 'dashboard' && <DashboardView role={role}   user={user}
   onNavigate={selectView}
-  onAlert={setSelectedAlert}/>}{activeView === 'mine' && <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Spatial operations</p><h1 className="mt-2 font-display text-2xl font-semibold">Live mine map</h1><p className="mt-2 text-sm text-muted-foreground">Monitor zones, people, equipment, and risk in one view.</p></div><div className="flex gap-2"><Button variant="outline" size="sm"><RadioTower className="h-3.5 w-3.5" /> Sensor filter</Button><Button variant="outline" size="sm"><Users className="h-3.5 w-3.5" /> Worker filter</Button><Button variant="outline" size="sm"><AlertTriangle className="h-3.5 w-3.5" /> Risk level</Button></div></div><MapSurface onAlert={() => toast({ title: 'Map filters opened', description: 'Filter by sensors, workers, equipment, or risk level.' })} /></div>}{activeView === 'safety' && <SafetyView onSelect={setSelectedAlert} />}{activeView === 'workers' && <WorkersView onSelect={setSelectedWorker} />}{activeView === 'worker-approvals' && ( <ManagerApprovalCenter />)}{activeView === 'safety-verification' && (<SafetyVerificationCenter />)}{activeView === 'health' && <WorkerHealth />}{activeView === 'leave' && (  
+  onAlert={setSelectedAlert}/>}{activeView === 'mine' && <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Spatial operations</p><h1 className="mt-2 font-display text-2xl font-semibold">Live mine map</h1><p className="mt-2 text-sm text-muted-foreground">Monitor zones, people, equipment, and risk in one view.</p></div><div className="flex gap-2"><Button variant="outline" size="sm"><RadioTower className="h-3.5 w-3.5" /> Sensor filter</Button><Button variant="outline" size="sm"><Users className="h-3.5 w-3.5" /> Worker filter</Button><Button variant="outline" size="sm"><AlertTriangle className="h-3.5 w-3.5" /> Risk level</Button></div></div><MapSurface onAlert={() => toast({ title: 'Map filters opened', description: 'Filter by sensors, workers, equipment, or risk level.' })} /></div>}{activeView === 'safety' && <SafetyView onSelect={setSelectedAlert} />}{activeView === 'workers' && <WorkersView onSelect={setSelectedWorker} />}{activeView === 'worker-approvals' && ( <ManagerApprovalCenter />)}{activeView === 'safety-verification' && (<SafetyVerificationCenter />)}{activeView === 'health' && <WorkerHealth />}{activeView === 'application-status' && (<ApplicationStatus />)}{activeView === 'leave' && (  
   <div className="space-y-6">
     <div>
       <p className="text-xs text-muted-foreground">
@@ -1455,7 +1432,7 @@ function AppShell({
 export default function NeonovaPlatform() {
   const [screen, setScreen] =
     useState<
-      'landing' | 'login' | 'signup' | 'app' 
+      'landing' | 'login' | 'signup' |'change-password' |'app'  
     >('landing');
 
   const [role, setRole] =
@@ -1495,10 +1472,18 @@ export default function NeonovaPlatform() {
           email: user.email,
           role: user.role,
           workerId: user.workerId,
+          loginId: user.loginId,
+          mustChangePassword: user.mustChangePassword,
         });
 
         setRole(appRole);
-        setScreen('app');
+        
+
+if (user.mustChangePassword) {
+  setScreen('change-password');
+} else {
+  setScreen('app');
+}
       } catch (error) {
         console.error(
           'Session restoration failed:',
@@ -1561,23 +1546,48 @@ export default function NeonovaPlatform() {
   if (screen === 'login') {
     return (
       <Login
-        onLogin={(
-          authenticatedRole,
-          authenticatedUser,
-        ) => {
-          setCurrentUser(
-            authenticatedUser,
-          );
-          setRole(
-            authenticatedRole,
-          );
-          setScreen('app');
-        }}
+onLogin={(
+  authenticatedRole,
+  authenticatedUser,
+) => {
+  setCurrentUser(
+    authenticatedUser,
+  );
+
+  setRole(
+    authenticatedRole,
+  );
+
+  if (authenticatedUser.mustChangePassword) {
+    setScreen('change-password');
+  } else {
+    setScreen('app');
+  }
+}}
+
+
         onSignup={() => setScreen('signup')}
       />
     );
   }
+if (screen === 'change-password') {
+  return (
+    <ChangePassword
+      onPasswordChanged={() => {
+        setCurrentUser((previousUser) =>
+          previousUser
+            ? {
+                ...previousUser,
+                mustChangePassword: false,
+              }
+            : previousUser
+        );
 
+        setScreen('app');
+      }}
+    />
+  );
+}
   if (screen === 'signup') {
     return (
       <Signup

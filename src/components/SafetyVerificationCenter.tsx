@@ -21,8 +21,8 @@ import { useToast } from '@/hooks/use-toast';
 type RegistrationRequest = {
   id: number;
   name: string;
-  email: string;
-  phone?: string | null;
+ email?: string | null;
+  phone: string ;
 
   requested_role: 'FIELD_WORKER';
 
@@ -304,11 +304,11 @@ export default function SafetyVerificationCenter() {
             value={registrations.length}
           />
 
-          <SummaryCard
-            icon={Check}
-            label="Current mine scope"
-            value={1}
-          />
+<SummaryCard
+  icon={Check}
+  label="Workers ready for verification"
+  value={registrations.length}
+/>
         </div>
 
         {/* Search */}

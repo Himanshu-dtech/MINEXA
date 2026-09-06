@@ -34,7 +34,10 @@ type AppRole =
   | 'dgms';
 
 interface LoginPageProps {
-  onLogin: (role: AppRole) => void;
+  onLogin: (
+    role: AppRole,
+    mustChangePassword: boolean
+  ) => void;
 }
 
 type RoleCardProps = {
@@ -125,8 +128,8 @@ const LoginPage: React.FC<LoginPageProps> = ({
   const [selectedRole, setSelectedRole] =
     useState<AppRole | null>(null);
 
-  const [email, setEmail] =
-    useState('');
+const [identifier, setIdentifier] =
+  useState('');
 
   const [password, setPassword] =
     useState('');
@@ -146,7 +149,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
 
   const handleBack = () => {
     setSelectedRole(null);
-    setEmail('');
+    setIdentifier('');
     setPassword('');
     setError('');
   };
@@ -166,7 +169,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
       return;
     }
 
-    if (!email.trim()) {
+    if (!identifier.trim()) {
       setError(
         'Please enter your email address.',
       );
@@ -186,7 +189,7 @@ const LoginPage: React.FC<LoginPageProps> = ({
       setLoading(true);
 
       const data = await loginUser(
-        email.trim(),
+        identifier.trim(),
         password,
       );
 
@@ -214,8 +217,14 @@ const LoginPage: React.FC<LoginPageProps> = ({
         JSON.stringify(data.user),
       );
 
-      // Tell the existing app which dashboard to open
-      onLogin(selectedRole);
+if (data.user.mustChangePassword) {
+  // Don't open the dashboard yet.
+  // The parent app should show ChangePassword.
+  onLogin(selectedRole, true);
+  return;
+}
+
+onLogin(selectedRole, false);
     } catch (err) {
       console.error(
         'Login failed:',
@@ -417,34 +426,32 @@ const LoginPage: React.FC<LoginPageProps> = ({
                     </div>
                   )}
 
-                  {/* Email */}
-                  <div>
-                    <label
-                      htmlFor="login-email"
-                      className="mb-2 block text-sm font-semibold"
-                    >
-                      Email
-                    </label>
+                  {/* User ID / Email */}
+<div>
+  <label
+    htmlFor="login-identifier"
+    className="mb-2 block text-sm font-semibold"
+  >
+    User ID or Email
+  </label>
 
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+  <div className="relative">
+    <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
-                      <Input
-                        id="login-email"
-                        type="email"
-                        value={email}
-                        onChange={(event) =>
-                          setEmail(
-                            event.target.value,
-                          )
-                        }
-                        placeholder="you@minexa.com"
-                        autoComplete="email"
-                        disabled={loading}
-                        className="pl-10"
-                      />
-                    </div>
-                  </div>
+    <Input
+      id="login-identifier"
+      type="text"
+      value={identifier}
+      onChange={(event) =>
+        setIdentifier(event.target.value)
+      }
+      placeholder="MW-TEST02 or you@minexa.com"
+      autoComplete="username"
+      disabled={loading}
+      className="pl-10"
+    />
+  </div>
+</div>
 
                   {/* Password */}
                   <div>
