@@ -17,14 +17,6 @@ router.post(
     requireRoles('FIELD_WORKER'),
     async (req, res) => {
         try {
-            const { shiftId } = req.body;
-
-            if (!shiftId) {
-                return res.status(400).json({
-                    status: 'error',
-                    message: 'Shift ID is required.'
-                });
-            }
 
             /*
             Get logged-in worker
@@ -62,24 +54,34 @@ router.post(
             const shiftResult = await pool.query(
                 `
                 SELECT
-                    id,
-                    name,
-                    start_time,
-                    end_time,
-                    mine_id
-                FROM shifts
-                WHERE id = $1
-                  AND mine_id = $2
-                  AND is_active = TRUE
+                    s.id,
+                    s.name,
+                    s.start_time,
+                    s.end_time,
+                    s.mine_id
+                FROM worker_shift_assignments a
+                JOIN shifts s
+                    ON s.id = a.shift_id
+                WHERE a.worker_id = $1
+                  AND a.is_active = TRUE
+                  AND s.is_active = TRUE
+                  AND s.mine_id = $2
+                  AND a.effective_from <= CURRENT_DATE
+                  AND (
+                      a.effective_to IS NULL
+                      OR a.effective_to >= CURRENT_DATE
+                  )
+                ORDER BY a.effective_from DESC
+                LIMIT 1
                 `,
-                [shiftId, worker.mine_id]
+                [worker.worker_id, worker.mine_id]
             );
 
             if (shiftResult.rows.length === 0) {
                 return res.status(404).json({
                     status: 'error',
                     message:
-                        'Invalid shift or shift does not belong to your mine.'
+                        'No active shift is assigned to you. Please contact your Mine Manager.'
                 });
             }
 
@@ -378,15 +380,15 @@ router.get(
     async (req, res) => {
         try {
 
-            const mineResult = await pool.query(
-                `
-                SELECT mine_id
-                FROM users
-                WHERE id = $1
-                  AND role = $2
-                `,
-                [req.user.userId]
-            );
+const mineResult = await pool.query(
+    `
+    SELECT mine_id
+    FROM users
+    WHERE id = $1
+      AND role IN ('MINE_MANAGER', 'SAFETY_OFFICER')
+    `,
+    [req.user.userId]
+);
 
             if (
                 mineResult.rows.length === 0 ||

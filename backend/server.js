@@ -11,8 +11,17 @@ const { requireRoles } = require('./middleware/roles');
 const applicationRoutes = require('./routes/application');
 const workerRoutes = require('./routes/workers');
 const attendanceRoutes = require('./routes/attendance');
+const shiftRoutes = require('./routes/shifts');
 
 const safetyRoutes = require('./routes/safety');
+const healthRoutes = require('./routes/health');
+const incidentRoutes = require('./routes/incidents');
+const dashboardRoutes = require('./routes/dashboard');
+const equipmentRoutes = require("./routes/equipment");
+const equipmentInspectionRoutes = require("./routes/equipmentInspections");
+const equipmentMaintenanceRoutes = require("./routes/equipmentMaintenance");
+const safetyChecklistRoutes = require("./routes/safetyChecklists");
+const safetyMonitoringRoutes = require("./routes/safetyMonitoring");
 
 app.use(cors({
   origin: 'http://localhost:8080',
@@ -25,6 +34,15 @@ app.use('/api/v1/safety', safetyRoutes);
 app.use('/api/v1/application', applicationRoutes);
 app.use('/api/v1/workers', workerRoutes);
 app.use('/api/v1/attendance',attendanceRoutes);
+app.use('/api/v1/shifts',shiftRoutes);
+app.use('/api/v1/health',healthRoutes);
+app.use('/api/v1/incidents',incidentRoutes);
+app.use('/api/v1/dashboard',dashboardRoutes);
+app.use("/api/v1/equipment", equipmentRoutes);
+app.use("/api/v1/equipment-inspections",equipmentInspectionRoutes);
+app.use("/api/v1/equipment-maintenance",equipmentMaintenanceRoutes);
+app.use("/api/v1/safety",safetyChecklistRoutes);
+app.use("/api/v1/safety-monitoring",safetyMonitoringRoutes);
 
 app.get('/api/v1/health', (req, res) => {
   res.json({
