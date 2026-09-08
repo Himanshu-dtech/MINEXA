@@ -22,6 +22,15 @@ const equipmentInspectionRoutes = require("./routes/equipmentInspections");
 const equipmentMaintenanceRoutes = require("./routes/equipmentMaintenance");
 const safetyChecklistRoutes = require("./routes/safetyChecklists");
 const safetyMonitoringRoutes = require("./routes/safetyMonitoring");
+const ppeTypeRoutes = require("./routes/ppeTypes");
+const ppeRoutes = require("./routes/ppe");
+const ppeInspectionRoutes = require("./routes/ppeInspections");
+const ppeMonitoringRoutes = require("./routes/ppeMonitoring");
+const emergencyRoutes = require("./routes/emergency");
+const emergencyDashboardRoutes = require("./routes/emergencyDashboard");
+const locationRoutes = require("./routes/location");
+const riskRoutes = require("./routes/risk");
+
 
 app.use(cors({
   origin: 'http://localhost:8080',
@@ -43,6 +52,15 @@ app.use("/api/v1/equipment-inspections",equipmentInspectionRoutes);
 app.use("/api/v1/equipment-maintenance",equipmentMaintenanceRoutes);
 app.use("/api/v1/safety",safetyChecklistRoutes);
 app.use("/api/v1/safety-monitoring",safetyMonitoringRoutes);
+app.use("/api/v1/ppe-types", ppeTypeRoutes);
+app.use("/api/v1/ppe",ppeRoutes);
+app.use("/api/v1/ppe-inspections",ppeInspectionRoutes);
+app.use("/api/v1/ppe-monitoring",ppeMonitoringRoutes);
+app.use("/api/v1/emergency",emergencyRoutes);
+app.use("/api/v1/emergency-dashboard",emergencyDashboardRoutes);
+app.use("/api/v1/location",locationRoutes);
+app.use("/api/v1/risk",riskRoutes);
+
 
 app.get('/api/v1/health', (req, res) => {
   res.json({

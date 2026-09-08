@@ -646,43 +646,49 @@ router.post(
                 // Update equipment based on result
                 // --------------------------------------------------
 
-                if (calculatedResult === "FAIL") {
+if (calculatedResult === "FAIL") {
 
-                    await client.query(
-                        `UPDATE equipment
-                         SET
-                            status = 'OUT_OF_SERVICE',
-                            assigned_worker_id = NULL,
-                            updated_at = CURRENT_TIMESTAMP
-                         WHERE id = $1`,
-                        [equipmentId]
-                    );
+    await client.query(
+        `UPDATE equipment
+         SET
+            status = 'OUT_OF_SERVICE',
+            assigned_worker_id = NULL,
+            updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [equipmentId]
+    );
 
-                } else if (
-                    calculatedResult === "CONDITIONAL"
-                ) {
+} else if (calculatedResult === "CONDITIONAL") {
 
-                    await client.query(
-                        `UPDATE equipment
-                         SET
-                            status = 'MAINTENANCE',
-                            assigned_worker_id = NULL,
-                            updated_at = CURRENT_TIMESTAMP
-                         WHERE id = $1`,
-                        [equipmentId]
-                    );
+    await client.query(
+        `UPDATE equipment
+         SET
+            status = 'MAINTENANCE',
+            assigned_worker_id = NULL,
+            updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [equipmentId]
+    );
 
-                } else {
+} else {
 
-                    await client.query(
-                        `UPDATE equipment
-                         SET
-                            status = 'AVAILABLE',
-                            updated_at = CURRENT_TIMESTAMP
-                         WHERE id = $1`,
-                        [equipmentId]
-                    );
-                }
+    /*
+        PASS:
+        Schedule the next inspection automatically.
+    */
+
+    await client.query(
+        `UPDATE equipment
+         SET
+            status = 'AVAILABLE',
+            next_inspection_date =
+                CURRENT_DATE +
+                COALESCE(inspection_frequency_days, 7),
+            updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [equipmentId]
+    );
+}
 
                 await client.query("COMMIT");
 
