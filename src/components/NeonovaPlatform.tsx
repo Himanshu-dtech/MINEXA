@@ -47,6 +47,7 @@ import {
   MousePointer2,
   Plus,
   RadioTower,
+  RefreshCw,
   Search,
   Settings,
   ShieldCheck,
@@ -79,6 +80,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -90,6 +92,9 @@ import AdminApprovalCenter from './AdminApprovalCenter';
 import ManagerApprovalCenter from './ManagerApprovalCenter';
 import SafetyVerificationCenter from './SafetyVerificationCenter';
 import ChangePassword from './ChangePassword';
+import EquipmentManagement from './EquipmentManagement';
+import { getMineIncidents, createIncident, type IncidentApi,} from '@/lib/api';
+
 
 type Role = 'admin' | 'manager' | 'safety' | 'worker';
 type View = 'dashboard' | 'mine' | 'safety' | 'workers' | 'equipment' | 'analytics' | 'reports' | 'admin' | 'leave' | 'settings' |'health'| 'safety-verification'|'worker-approvals'| 'application-status';
@@ -178,7 +183,17 @@ const navItems: { id: View; label: string; icon: React.ElementType; section?: st
 const roleAccess: Record<Role, View[]> = {
   admin: ['dashboard', 'workers', 'analytics', 'reports', 'admin', 'settings'],
   manager: ['dashboard', 'mine', 'safety', 'workers', 'equipment', 'analytics', 'reports', 'settings','worker-approvals',],
-  safety: ['dashboard', 'mine', 'safety', 'workers', 'analytics', 'reports', 'settings','safety-verification'],
+ safety: [
+  'dashboard',
+  'mine',
+  'safety',
+  'workers',
+  'equipment',
+  'analytics',
+  'reports',
+  'settings',
+  'safety-verification'
+],
   worker: ['dashboard', 'leave', 'settings','health','application-status',],
 };
 
@@ -631,9 +646,688 @@ function WorkerMobileView({
   return <div className="space-y-5"><div><p className="text-xs text-muted-foreground">Thursday, 12 June · Shift A</p><h1 className="mt-2 font-display text-2xl font-semibold">  Good evening, {user?.name ?? 'Worker'}</h1><p className="mt-2 text-sm text-muted-foreground">Stay aware. Stay connected.</p></div>   <div className="relative overflow-hidden rounded-2xl border border-primary/25 bg-primary/10 p-5"><div className="flex items-start justify-between"><div><Badge tone="success"><StatusDot status="success" /> Safe to operate</Badge><p className="mt-4 text-xs text-muted-foreground">Personal safety score</p><p className="mt-1 font-display text-4xl font-semibold text-primary">98<span className="text-lg text-muted-foreground">/100</span></p></div><ShieldCheck className="h-9 w-9 text-primary" /></div><div className="mt-5 h-1.5 rounded-full bg-primary/15"><div className="h-full w-[98%] rounded-full bg-primary" /></div><p className="mt-2 text-[10px] text-muted-foreground">Excellent · +3 pts this week</p></div><div className="grid grid-cols-2 gap-4"><div className="ops-card p-4"><MapPin className="h-4 w-4 text-secondary" /><p className="mt-5 text-[10px] uppercase tracking-wider text-muted-foreground">Current zone</p><p className="mt-1 font-display text-lg font-semibold">Zone A</p><p className="mt-1 text-[10px] text-primary">Drill face 04</p></div><div className="ops-card p-4"><Clock3 className="h-4 w-4 text-safety-warning" /><p className="mt-5 text-[10px] uppercase tracking-wider text-muted-foreground">Shift remaining</p><p className="mt-1 font-display text-lg font-semibold">05:18:42</p><p className="mt-1 text-[10px] text-muted-foreground">Ends 14:00</p></div></div><div className="ops-card p-5"><PanelTitle icon={CheckCircle2} eyebrow="Today" title="Your tasks" action={<Badge tone="success">2 / 3 done</Badge>} /><div className="space-y-3">{['Complete pre-shift safety check', 'Inspect drill rig DR-03', 'Submit shift handover'].map((task, i) => <Button variant="ghost" className="flex h-auto w-full justify-start gap-3 rounded-lg border border-border/60 px-3 py-3 text-left" key={task} onClick={() => toast({ title: i === 0 ? 'Safety check complete' : 'Task opened', description: task })}><span className={cx('flex h-5 w-5 items-center justify-center rounded-full border', i < 2 ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent')}>{i < 2 ? <Check className="h-3 w-3" /> : <span className="h-2 w-2 rounded-full bg-border" />}</span><span className={cx('text-xs', i < 2 && 'text-muted-foreground line-through')}>{task}</span></Button>)}</div></div><Button variant="danger" size="lg" className="h-14 w-full" onClick={() => toast({ title: 'SOS signal sent', description: 'Your location and profile have been shared with the response team.' })}><AlertTriangle className="h-5 w-5" /> Emergency SOS</Button><Button variant="outline" className="w-full" onClick={() => onNavigate('leave')}><CalendarDays className="h-4 w-4" /> Manage leave</Button></div>;
 }
 
-function SafetyView({ onSelect }: { onSelect: (alert: typeof alerts[number]) => void }) {
-  const [tab, setTab] = useState('All'); const tabs = ['All', 'Critical', 'Warning', 'Information']; const filtered = tab === 'All' ? alerts : alerts.filter((alert) => alert.severity === tab.toLowerCase());
-  return <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Real-time incident response</p><h1 className="mt-2 font-display text-2xl font-semibold">Safety & alerts</h1><p className="mt-2 text-sm text-muted-foreground">Prioritize what needs attention across the mine.</p></div><div className="flex gap-2"><Button variant="outline" size="sm"><Filter className="h-3.5 w-3.5" /> Filter</Button><Button size="sm"><MessageSquareWarning className="h-3.5 w-3.5" /> Create incident</Button></div></div><div className="grid gap-4 sm:grid-cols-3"><MetricCard label="Open alerts" value="04" change="1 critical" trend="down" icon={Bell} tone="warning" /><MetricCard label="Avg. response time" value="06:42" change="12% faster" trend="up" icon={Clock3} tone="success" /><MetricCard label="Safety score" value="94.2%" change="+2.4%" trend="up" icon={ShieldCheck} tone="success" /></div><div className="ops-card overflow-hidden"><div className="flex flex-wrap items-center gap-1 border-b border-border p-3">{tabs.map((item) => <Button key={item} variant={tab === item ? 'secondary' : 'ghost'} size="sm" onClick={() => setTab(item)} className={cx(tab === item && 'text-primary')}>{item}{item !== 'All' && <span className="ml-1 rounded-full bg-background px-1.5 text-[10px]">{alerts.filter((a) => a.severity === item.toLowerCase()).length}</span>}</Button>)}</div><div className="divide-y divide-border/70">{filtered.map((alert) => <Button variant="ghost" key={alert.id} className="flex h-auto w-full items-start justify-start gap-4 rounded-none px-5 py-5 text-left hover:bg-secondary/50" onClick={() => onSelect(alert)}><span className={cx('mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg', alert.severity === 'critical' ? 'bg-safety-danger/10 text-safety-danger' : alert.severity === 'warning' ? 'bg-safety-warning/10 text-safety-warning' : 'bg-secondary text-secondary')}><AlertTriangle className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2"><span className="text-sm font-semibold text-foreground">{alert.title}</span><Badge tone={alert.severity === 'critical' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'info'}>{alert.severity}</Badge></span><span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground"><span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {alert.location}</span><span className="flex items-center gap-1"><Clock3 className="h-3 w-3" /> {alert.time}</span><span>Reading: <b className="text-foreground">{alert.reading}</b></span></span></span><span className="hidden text-right sm:block"><span className="block text-[10px] uppercase tracking-wider text-muted-foreground">Risk score</span><span className={cx('mt-1 block font-display text-lg font-semibold', alert.score > 80 ? 'text-safety-danger' : alert.score > 50 ? 'text-safety-warning' : 'text-primary')}>{alert.score}</span></span><ChevronRight className="mt-3 h-4 w-4 text-muted-foreground" /></Button>)}</div></div></div>;
+function SafetyView({
+  onSelect,
+}: {
+  onSelect: (incident: IncidentApi) => void;
+}) {
+  const [tab, setTab] = useState('All');
+  const [incidents, setIncidents] = useState<IncidentApi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+const [showCreateForm, setShowCreateForm] = useState(false);
+const [creating, setCreating] = useState(false);
+
+const [incidentForm, setIncidentForm] = useState({
+  incidentType: 'NEAR_MISS' as
+    | 'ACCIDENT'
+    | 'HAZARD'
+    | 'NEAR_MISS'
+    | 'UNSAFE_CONDITION'
+    | 'SAFETY_VIOLATION',
+  title: '',
+  description: '',
+  location: '',
+  severity: 'MEDIUM' as
+    | 'LOW'
+    | 'MEDIUM'
+    | 'HIGH'
+    | 'CRITICAL',
+});
+  const tabs = ['All', 'Critical', 'Warning', 'Information'];
+
+  async function loadIncidents() {
+    try {
+      setLoading(true);
+      setError('');
+
+      const data = await getMineIncidents();
+      setIncidents(data);
+    } catch (err) {
+      console.error('Failed to load incidents:', err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to load safety incidents.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function handleCreateIncident(
+  event: React.FormEvent<HTMLFormElement>,
+) {
+  event.preventDefault();
+
+  if (!incidentForm.title.trim()) {
+    setError('Incident title is required.');
+    return;
+  }
+
+  if (!incidentForm.description.trim()) {
+    setError('Incident description is required.');
+    return;
+  }
+
+  try {
+    setCreating(true);
+    setError('');
+
+    await createIncident({
+      incidentType: incidentForm.incidentType,
+      title: incidentForm.title.trim(),
+      description: incidentForm.description.trim(),
+      location:
+        incidentForm.location.trim() || undefined,
+      severity: incidentForm.severity,
+    });
+
+    setIncidentForm({
+      incidentType: 'NEAR_MISS',
+      title: '',
+      description: '',
+      location: '',
+      severity: 'MEDIUM',
+    });
+
+    setShowCreateForm(false);
+
+    await loadIncidents();
+  } catch (err) {
+    console.error(
+      'Failed to create incident:',
+      err,
+    );
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Failed to create incident.',
+    );
+  } finally {
+    setCreating(false);
+  }
+}
+  useEffect(() => {
+    loadIncidents();
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (tab === 'All') {
+      return incidents;
+    }
+
+    if (tab === 'Critical') {
+      return incidents.filter(
+        (incident) => incident.severity === 'CRITICAL',
+      );
+    }
+
+    if (tab === 'Warning') {
+      return incidents.filter(
+        (incident) =>
+          incident.severity === 'HIGH' ||
+          incident.severity === 'MEDIUM',
+      );
+    }
+
+    if (tab === 'Information') {
+      return incidents.filter(
+        (incident) => incident.severity === 'LOW',
+      );
+    }
+
+    return incidents;
+  }, [incidents, tab]);
+
+  const openIncidents = incidents.filter(
+    (incident) =>
+      incident.status !== 'RESOLVED' &&
+      incident.status !== 'CLOSED',
+  );
+
+  const criticalIncidents = incidents.filter(
+    (incident) =>
+      incident.severity === 'CRITICAL',
+  );
+
+  function getTabCount(item: string) {
+    if (item === 'All') {
+      return incidents.length;
+    }
+
+    if (item === 'Critical') {
+      return incidents.filter(
+        (incident) =>
+          incident.severity === 'CRITICAL',
+      ).length;
+    }
+
+    if (item === 'Warning') {
+      return incidents.filter(
+        (incident) =>
+          incident.severity === 'HIGH' ||
+          incident.severity === 'MEDIUM',
+      ).length;
+    }
+
+    if (item === 'Information') {
+      return incidents.filter(
+        (incident) =>
+          incident.severity === 'LOW',
+      ).length;
+    }
+
+    return 0;
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* HEADER */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+
+        <div>
+          <p className="text-xs text-muted-foreground">
+            Real-time incident response
+          </p>
+
+          <h1 className="mt-2 font-display text-2xl font-semibold">
+            Safety & alerts
+          </h1>
+
+          <p className="mt-2 text-sm text-muted-foreground">
+            Prioritize what needs attention across the mine.
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadIncidents}
+            disabled={loading}
+          >
+            <RefreshCw
+              className={
+                loading
+                  ? 'h-3.5 w-3.5 animate-spin'
+                  : 'h-3.5 w-3.5'
+              }
+            />
+
+            {loading
+              ? 'Refreshing...'
+              : 'Refresh'}
+          </Button>
+
+          <Button
+  size="sm"
+  onClick={() =>
+    setShowCreateForm((value) => !value)
+  }
+>
+  <MessageSquareWarning className="h-3.5 w-3.5" />
+
+  {showCreateForm
+    ? 'Close form'
+    : 'Create incident'}
+</Button>
+
+        </div>
+      </div>
+{showCreateForm && (
+  <div className="ops-card p-5">
+
+    <div className="mb-5">
+      <p className="text-xs text-primary">
+        Incident reporting
+      </p>
+
+      <h2 className="mt-1 font-display text-lg font-semibold">
+        Report a new incident
+      </h2>
+
+      <p className="mt-1 text-xs text-muted-foreground">
+        Submit a safety event for this mine.
+      </p>
+    </div>
+
+    <form
+      onSubmit={handleCreateIncident}
+      className="space-y-5"
+    >
+
+      <div className="grid gap-4 md:grid-cols-2">
+
+        <div>
+          <label className="mb-2 block text-xs font-semibold">
+            Incident type
+          </label>
+
+          <select
+            value={incidentForm.incidentType}
+            onChange={(e) =>
+              setIncidentForm((prev) => ({
+                ...prev,
+                incidentType:
+                  e.target.value as typeof prev.incidentType,
+              }))
+            }
+            className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+          >
+            <option value="ACCIDENT">Accident</option>
+            <option value="HAZARD">Hazard</option>
+            <option value="NEAR_MISS">Near Miss</option>
+            <option value="UNSAFE_CONDITION">
+              Unsafe Condition
+            </option>
+            <option value="SAFETY_VIOLATION">
+              Safety Violation
+            </option>
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-2 block text-xs font-semibold">
+            Severity
+          </label>
+
+          <select
+            value={incidentForm.severity}
+            onChange={(e) =>
+              setIncidentForm((prev) => ({
+                ...prev,
+                severity:
+                  e.target.value as typeof prev.severity,
+              }))
+            }
+            className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+          >
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+            <option value="CRITICAL">Critical</option>
+          </select>
+        </div>
+
+      </div>
+
+      <div>
+        <label
+          htmlFor="incident-title"
+          className="mb-2 block text-xs font-semibold"
+        >
+          Incident title
+        </label>
+
+        <Input
+          id="incident-title"
+          value={incidentForm.title}
+          onChange={(e) =>
+            setIncidentForm((prev) => ({
+              ...prev,
+              title: e.target.value,
+            }))
+          }
+          placeholder="Example: Loose rock near conveyor"
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor="incident-location"
+          className="mb-2 block text-xs font-semibold"
+        >
+          Location
+        </label>
+
+        <Input
+          id="incident-location"
+          value={incidentForm.location}
+          onChange={(e) =>
+            setIncidentForm((prev) => ({
+              ...prev,
+              location: e.target.value,
+            }))
+          }
+          placeholder="Example: Conveyor Area B"
+        />
+      </div>
+
+      <div>
+        <label
+          htmlFor="incident-description"
+          className="mb-2 block text-xs font-semibold"
+        >
+          Description
+        </label>
+
+        <textarea
+          id="incident-description"
+          value={incidentForm.description}
+          onChange={(e) =>
+            setIncidentForm((prev) => ({
+              ...prev,
+              description: e.target.value,
+            }))
+          }
+          placeholder="Describe what happened, what was observed, and any immediate risk."
+          className="min-h-[120px] w-full rounded-md border border-border bg-background px-3 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+        />
+      </div>
+
+      <div className="flex justify-end gap-2">
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setShowCreateForm(false)}
+          disabled={creating}
+        >
+          Cancel
+        </Button>
+
+        <Button
+          type="submit"
+          disabled={creating}
+        >
+          {creating
+            ? 'Creating...'
+            : 'Submit incident'}
+        </Button>
+
+      </div>
+
+    </form>
+  </div>
+)}
+
+      {/* ERROR */}
+      {error && (
+        <div className="rounded-xl border border-safety-danger/30 bg-safety-danger/10 p-4">
+          <div className="flex items-start gap-3">
+
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-safety-danger" />
+
+            <div>
+              <p className="text-sm font-semibold text-safety-danger">
+                Unable to load incidents
+              </p>
+
+              <p className="mt-1 text-xs text-muted-foreground">
+                {error}
+              </p>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+
+      {/* SUMMARY */}
+      <div className="grid gap-4 sm:grid-cols-3">
+
+        <MetricCard
+          label="Open alerts"
+          value={String(openIncidents.length)}
+          change={`${criticalIncidents.length} critical`}
+          trend="down"
+          icon={Bell}
+          tone="warning"
+        />
+
+        <MetricCard
+          label="Avg. response time"
+          value="—"
+          change="Live incident tracking"
+          trend="flat"
+          icon={Clock3}
+          tone="success"
+        />
+
+        <MetricCard
+          label="Safety score"
+          value="—"
+          change="Calculated from safety data"
+          trend="flat"
+          icon={ShieldCheck}
+          tone="success"
+        />
+
+      </div>
+
+
+      {/* INCIDENT LIST */}
+      <div className="ops-card overflow-hidden">
+
+        {/* FILTER TABS */}
+        <div className="flex flex-wrap items-center gap-1 border-b border-border p-3">
+
+          {tabs.map((item) => (
+            <Button
+              key={item}
+              variant={
+                tab === item
+                  ? 'secondary'
+                  : 'ghost'
+              }
+              size="sm"
+              onClick={() => setTab(item)}
+              className={cx(
+                tab === item && 'text-primary',
+              )}
+            >
+              {item}
+
+              {item !== 'All' && (
+                <span className="ml-1 rounded-full bg-background px-1.5 text-[10px]">
+                  {getTabCount(item)}
+                </span>
+              )}
+            </Button>
+          ))}
+
+        </div>
+
+
+        {/* LOADING */}
+        {loading && (
+          <div className="p-10 text-center">
+
+            <RefreshCw className="mx-auto h-6 w-6 animate-spin text-primary" />
+
+            <p className="mt-3 text-sm font-semibold">
+              Loading safety incidents
+            </p>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              Fetching live incident data from MINEXA.
+            </p>
+
+          </div>
+        )}
+
+
+        {/* EMPTY */}
+        {!loading && filtered.length === 0 && (
+          <div className="p-10 text-center">
+
+            <ShieldCheck className="mx-auto h-8 w-8 text-primary" />
+
+            <p className="mt-3 text-sm font-semibold">
+              No incidents found
+            </p>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              There are no incidents matching the selected filter.
+            </p>
+
+          </div>
+        )}
+
+
+        {/* LIVE INCIDENTS */}
+        {!loading && filtered.length > 0 && (
+          <div className="divide-y divide-border/70">
+
+            {filtered.map((incident) => {
+
+              const isCritical =
+                incident.severity === 'CRITICAL';
+
+              const isHigh =
+                incident.severity === 'HIGH';
+
+              const isMedium =
+                incident.severity === 'MEDIUM';
+
+              const badgeTone:
+                | 'danger'
+                | 'warning'
+                | 'info' =
+                isCritical || isHigh
+                  ? 'danger'
+                  : isMedium
+                    ? 'warning'
+                    : 'info';
+
+              const iconBackground =
+                isCritical || isHigh
+                  ? 'bg-safety-danger/10 text-safety-danger'
+                  : isMedium
+                    ? 'bg-safety-warning/10 text-safety-warning'
+                    : 'bg-secondary text-secondary-foreground';
+
+              return (
+                <Button
+                  variant="ghost"
+                  key={incident.id}
+                  className="flex h-auto w-full items-start justify-start gap-4 rounded-none px-5 py-5 text-left hover:bg-secondary/50"
+                  onClick={() => onSelect(incident)}
+                >
+
+                  {/* ICON */}
+                  <span
+                    className={cx(
+                      'mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+                      iconBackground,
+                    )}
+                  >
+                    <AlertTriangle className="h-4 w-4" />
+                  </span>
+
+
+                  {/* CONTENT */}
+                  <span className="min-w-0 flex-1">
+
+                    <span className="flex flex-wrap items-center gap-2">
+
+                      <span className="text-sm font-semibold text-foreground">
+                        {incident.title}
+                      </span>
+
+                      <Badge tone={badgeTone}>
+                        {incident.severity}
+                      </Badge>
+
+                      <Badge
+                        tone={
+                          incident.status === 'CLOSED'
+                            ? 'neutral'
+                            : incident.status === 'RESOLVED'
+                              ? 'success'
+                              : 'warning'
+                        }
+                      >
+                        {incident.status.replace(
+                          '_',
+                          ' ',
+                        )}
+                      </Badge>
+
+                    </span>
+
+
+                    {/* META */}
+                    <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />
+                        {incident.location ||
+                          'Location not specified'}
+                      </span>
+
+                      <span className="flex items-center gap-1">
+                        <Clock3 className="h-3 w-3" />
+                        {new Date(
+                          incident.incident_date,
+                        ).toLocaleString()}
+                      </span>
+
+                      <span>
+                        Type:{' '}
+                        <b className="text-foreground">
+                          {incident.incident_type.replace(/_/g,' ',)}
+                        </b>
+                      </span>
+
+                    </span>
+
+
+                    {/* DESCRIPTION */}
+                    {incident.description && (
+                      <span className="mt-2 block line-clamp-2 text-[11px] text-muted-foreground">
+                        {incident.description}
+                      </span>
+                    )}
+
+                  </span>
+
+
+                  {/* STATUS */}
+                  <span className="hidden text-right sm:block">
+
+                    <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
+                      Status
+                    </span>
+
+                    <span
+                      className={cx(
+                        'mt-1 block text-xs font-semibold',
+                        incident.status === 'RESOLVED' ||
+                          incident.status === 'CLOSED'
+                          ? 'text-safety-success'
+                          : incident.severity === 'CRITICAL'
+                            ? 'text-safety-danger'
+                            : 'text-safety-warning',
+                      )}
+                    >
+                      {incident.status.replace(
+                        /_/g,
+                        ' ',
+                      )}
+                    </span>
+
+                  </span>
+
+
+                  <ChevronRight className="mt-3 h-4 w-4 shrink-0 text-muted-foreground" />
+
+                </Button>
+              );
+            })}
+
+          </div>
+        )}
+
+      </div>
+
+    </div>
+  );
 }
 
 function WorkersView({ onSelect }: { onSelect: (worker: typeof workers[number]) => void }) {
@@ -659,9 +1353,436 @@ function AdminView() {
   return <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Platform governance</p><h1 className="mt-2 font-display text-2xl font-semibold">Administration</h1><p className="mt-2 text-sm text-muted-foreground">Configure the operating system behind your mine.</p></div><Button size="sm" onClick={() => toast({ title: 'Invite user', description: 'The invite workflow is ready to connect to your identity provider.' })}><Users className="h-3.5 w-3.5" /> Invite user</Button></div><div className="ops-card p-5"><PanelTitle icon={Settings} eyebrow="System control" title="Manage your workspace" /><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{sections.map(([title, description, Icon]) => <Button variant="outline" className="flex h-auto min-h-[132px] flex-col items-start justify-between p-4 text-left hover:border-primary/50 hover:bg-secondary" key={title} onClick={() => toast({ title, description })}><span className="flex w-full items-center justify-between"><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-primary"><Icon className="h-4 w-4" /></span><ChevronRight className="h-4 w-4 text-muted-foreground" /></span><span><span className="block text-xs font-semibold">{title}</span><span className="mt-1 block text-[10px] leading-4 text-muted-foreground">{description}</span></span></Button>)}</div></div><div className="grid gap-6 lg:grid-cols-[.8fr_1.2fr]"><div className="ops-card p-5"><PanelTitle icon={Activity} eyebrow="Status" title="System health" /><div className="space-y-4">{[['Telemetry ingestion', 'Operational', 'success'], ['Alert routing', 'Operational', 'success'], ['Report generation', 'Operational', 'success'], ['Data warehouse sync', 'Degraded · 2 min delay', 'warning']].map(([name, status, tone]) => <div className="flex items-center justify-between border-b border-border/60 pb-3 last:border-0 last:pb-0" key={name}><span className="text-xs text-muted-foreground">{name}</span><span className={cx('flex items-center gap-2 text-[11px] font-semibold', tone === 'success' ? 'text-primary' : 'text-safety-warning')}><StatusDot status={tone as 'success' | 'warning'} /> {status}</span></div>)}</div></div><div className="ops-card p-5"><PanelTitle icon={FileText} eyebrow="Governance" title="Recent audit activity" /><div className="space-y-1">{['Role policy updated for Safety Officer', 'New sensor group added to Zone C', 'Report export completed by Priya Sharma', 'Maintenance threshold changed for TR-08'].map((item, i) => <div key={item} className="flex items-center gap-3 rounded-lg px-2 py-3"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-secondary"><Activity className="h-3.5 w-3.5 text-primary" /></span><div className="flex-1"><p className="text-xs font-medium">{item}</p><p className="mt-1 text-[10px] text-muted-foreground">{i + 1} hour{ i ? 's' : '' } ago · system event</p></div></div>)}</div></div></div></div>;
 }
 
-function DetailDrawer({ alert, worker, asset, onClose, onNavigate }: { alert: typeof alerts[number] | null; worker: typeof workers[number] | null; asset: typeof equipment[number] | null; onClose: () => void; onNavigate: (view: View) => void }) {
-  if (!alert && !worker && !asset) return null;
-  return <div className="fixed inset-0 z-50 flex justify-end bg-background/50 backdrop-blur-sm" onClick={onClose}><aside className="h-full w-full max-w-md overflow-y-auto border-l border-border bg-surface p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}><div className="flex items-center justify-between border-b border-border pb-4"><div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-primary">{alert ? 'Alert detail' : worker ? 'Worker profile' : 'Equipment detail'}</p><h2 className="mt-1 font-display text-lg font-semibold">{alert?.title ?? worker?.name ?? asset?.name}</h2></div><Button variant="ghost" size="icon" onClick={onClose} aria-label="Close details"><X className="h-4 w-4" /></Button></div>{alert && <div className="space-y-5 pt-5"><Badge tone={alert.severity === 'critical' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'info'}><StatusDot status={alert.severity === 'critical' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'info'} /> {alert.severity} · {alert.time}</Badge><div className="grid grid-cols-2 gap-3">{[['Risk score', `${alert.score}/100`], ['Reading', alert.reading], ['Affected workers', `${alert.workers}`], ['Location', alert.location]].map(([label, value]) => <div className="rounded-lg border border-border bg-secondary/50 p-3" key={label}><p className="text-[10px] text-muted-foreground">{label}</p><p className="mt-2 text-sm font-semibold">{value}</p></div>)}</div><div className="rounded-lg border border-safety-warning/25 bg-safety-warning/10 p-4"><p className="flex items-center gap-2 text-xs font-semibold text-safety-warning"><Zap className="h-3.5 w-3.5" /> Recommended action</p><p className="mt-2 text-xs leading-5 text-muted-foreground">{alert.action}</p></div><div><p className="mb-3 text-xs font-semibold">Live sensor readings</p><div className="space-y-3">{[['Methane', '4.8%', 'critical'], ['Temperature', '42°C', 'success'], ['Airflow', '2.8 m/s', 'success'], ['Dust PM2.5', '18 µg/m³', 'warning']].map(([name, value, tone]) => <div className="flex items-center justify-between border-b border-border/60 pb-3 text-xs last:border-0" key={name}><span className="text-muted-foreground">{name}</span><span className={cx('flex items-center gap-2 font-semibold', tone === 'critical' ? 'text-safety-danger' : tone === 'warning' ? 'text-safety-warning' : 'text-primary')}><StatusDot status={tone as 'danger' | 'warning' | 'success'} /> {value}</span></div>)}</div></div><div className="grid grid-cols-2 gap-3"><Button onClick={onClose}><Check className="h-4 w-4" /> Acknowledge</Button><Button variant="danger" onClick={() => onNavigate('reports')}><ArrowUpRight className="h-4 w-4" /> Escalate</Button></div></div>}{worker && <div className="space-y-5 pt-5"><div className="flex items-center gap-4"><span className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary font-display text-lg font-semibold text-primary">{worker.name.split(' ').map((n) => n[0]).join('')}</span><div><p className="text-sm font-semibold">{worker.role}</p><p className="mt-1 font-mono text-[10px] text-muted-foreground">{worker.id} · {worker.shift}</p><div className="mt-2"><Badge tone={worker.status === 'On site' ? 'success' : 'warning'}><StatusDot status={worker.status === 'On site' ? 'success' : 'warning'} /> {worker.status}</Badge></div></div></div><div className="grid grid-cols-2 gap-3"><div className="rounded-lg border border-border bg-secondary/50 p-3"><p className="text-[10px] text-muted-foreground">Current zone</p><p className="mt-2 text-sm font-semibold">{worker.zone}</p></div><div className="rounded-lg border border-border bg-secondary/50 p-3"><p className="text-[10px] text-muted-foreground">Safety score</p><p className="mt-2 font-display text-lg font-semibold text-primary">{worker.score}/100</p></div></div><div className="rounded-lg border border-border p-4"><p className="text-xs font-semibold">Activity history</p><div className="mt-4 space-y-4 border-l border-border pl-4 text-xs"><p><span className="font-semibold">Checked into {worker.zone}</span><span className="mt-1 block text-[10px] text-muted-foreground">{worker.lastSeen}</span></p><p><span className="font-semibold">Completed PPE verification</span><span className="mt-1 block text-[10px] text-muted-foreground">Today · 06:08</span></p><p><span className="font-semibold">Shift briefing acknowledged</span><span className="mt-1 block text-[10px] text-muted-foreground">Today · 05:52</span></p></div></div><Button className="w-full" onClick={() => onNavigate('safety')}><ShieldCheck className="h-4 w-4" /> View safety history</Button></div>}{asset && <div className="space-y-5 pt-5"><div className="grid grid-cols-2 gap-3">{[['Health score', `${asset.health}%`], ['Operating hours', '8,420 h'], ['Temperature', asset.temp], ['Vibration', asset.vibration], ['Fuel level', '68%'], ['Next service', 'In 42 h']].map(([label, value]) => <div className="rounded-lg border border-border bg-secondary/50 p-3" key={label}><p className="text-[10px] text-muted-foreground">{label}</p><p className="mt-2 text-sm font-semibold">{value}</p></div>)}</div><div className="rounded-lg border border-primary/25 bg-primary/10 p-4"><p className="flex items-center gap-2 text-xs font-semibold text-primary"><Sparkles className="h-3.5 w-3.5" /> Predictive maintenance</p><p className="mt-2 text-xs leading-5 text-muted-foreground">Based on vibration and thermal telemetry, schedule a bearing inspection in the next 42 operating hours.</p></div><Button className="w-full" onClick={onClose}><Wrench className="h-4 w-4" /> Schedule maintenance</Button></div>}</aside></div>;
+function DetailDrawer({
+  alert,
+  worker,
+  asset,
+  onClose,
+  onNavigate,
+}: {
+  alert:
+    | IncidentApi
+    | typeof alerts[number]
+    | null;
+  worker: typeof workers[number] | null;
+  asset: typeof equipment[number] | null;
+  onClose: () => void;
+  onNavigate: (view: View) => void;
+}) {
+  if (!alert && !worker && !asset) {
+    return null;
+  }
+
+  const isLiveIncident =
+    alert !== null &&
+    'incident_type' in alert;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex justify-end bg-background/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <aside
+        className="h-full w-full max-w-md overflow-y-auto border-l border-border bg-surface p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+
+        {/* HEADER */}
+        <div className="flex items-center justify-between border-b border-border pb-4">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[.18em] text-primary">
+              {alert
+                ? isLiveIncident
+                  ? 'Incident detail'
+                  : 'Alert detail'
+                : worker
+                  ? 'Worker profile'
+                  : 'Equipment detail'}
+            </p>
+
+            <h2 className="mt-1 font-display text-lg font-semibold">
+              {alert?.title ??
+                worker?.name ??
+                asset?.name}
+            </h2>
+          </div>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            aria-label="Close details"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+
+        {/* LIVE INCIDENT */}
+       {alert && 'incident_type' in alert && (
+          <div className="space-y-5 pt-5">
+
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                tone={
+                  alert.severity === 'CRITICAL' ||
+                  alert.severity === 'HIGH'
+                    ? 'danger'
+                    : alert.severity === 'MEDIUM'
+                      ? 'warning'
+                      : 'info'
+                }
+              >
+                {alert.severity}
+              </Badge>
+
+              <Badge
+                tone={
+                  alert.status === 'CLOSED'
+                    ? 'neutral'
+                    : alert.status === 'RESOLVED'
+                      ? 'success'
+                      : 'warning'
+                }
+              >
+                {alert.status.replace(/_/g, ' ')}
+              </Badge>
+            </div>
+
+
+            <div className="grid grid-cols-2 gap-3">
+
+              <div className="rounded-lg border border-border bg-secondary/50 p-3">
+                <p className="text-[10px] text-muted-foreground">
+                  Incident type
+                </p>
+
+                <p className="mt-2 text-sm font-semibold">
+                  {alert.incident_type.replace(/_/g, ' ')}
+                </p>
+              </div>
+
+
+              <div className="rounded-lg border border-border bg-secondary/50 p-3">
+                <p className="text-[10px] text-muted-foreground">
+                  Severity
+                </p>
+
+                <p className="mt-2 text-sm font-semibold">
+                  {alert.severity}
+                </p>
+              </div>
+
+
+              <div className="rounded-lg border border-border bg-secondary/50 p-3">
+                <p className="text-[10px] text-muted-foreground">
+                  Location
+                </p>
+
+                <p className="mt-2 text-sm font-semibold">
+                  {alert.location ??
+                    'Not specified'}
+                </p>
+              </div>
+
+
+              <div className="rounded-lg border border-border bg-secondary/50 p-3">
+                <p className="text-[10px] text-muted-foreground">
+                  Reported
+                </p>
+
+                <p className="mt-2 text-sm font-semibold">
+                  {new Date(
+                    alert.incident_date,
+                  ).toLocaleString()}
+                </p>
+              </div>
+
+            </div>
+
+
+            <div className="rounded-lg border border-border p-4">
+              <p className="text-xs font-semibold">
+                Description
+              </p>
+
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                {alert.description ||
+                  'No description provided.'}
+              </p>
+            </div>
+
+
+            {alert.resolution_notes && (
+              <div className="rounded-lg border border-primary/25 bg-primary/10 p-4">
+                <p className="text-xs font-semibold text-primary">
+                  Resolution notes
+                </p>
+
+                <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                  {alert.resolution_notes}
+                </p>
+              </div>
+            )}
+
+
+            <Button
+              className="w-full"
+              onClick={() => onNavigate('reports')}
+            >
+              <ArrowUpRight className="h-4 w-4" />
+              View incident reports
+            </Button>
+
+          </div>
+        )}
+
+
+        {/* OLD DEMO ALERT */}
+        {alert && !('incident_type' in alert) && (
+          <div className="space-y-5 pt-5">
+
+            <Badge
+              tone={
+                alert.severity === 'critical'
+                  ? 'danger'
+                  : alert.severity === 'warning'
+                    ? 'warning'
+                    : 'info'
+              }
+            >
+              <StatusDot
+                status={
+                  alert.severity === 'critical'
+                    ? 'danger'
+                    : alert.severity === 'warning'
+                      ? 'warning'
+                      : 'info'
+                }
+              />
+
+              {alert.severity} · {alert.time}
+            </Badge>
+
+
+            <div className="grid grid-cols-2 gap-3">
+
+              {[
+                [
+                  'Risk score',
+                  `${alert.score}/100`,
+                ],
+                [
+                  'Reading',
+                  alert.reading,
+                ],
+                [
+                  'Affected workers',
+                  `${alert.workers}`,
+                ],
+                [
+                  'Location',
+                  alert.location,
+                ],
+              ].map(([label, value]) => (
+                <div
+                  className="rounded-lg border border-border bg-secondary/50 p-3"
+                  key={label}
+                >
+                  <p className="text-[10px] text-muted-foreground">
+                    {label}
+                  </p>
+
+                  <p className="mt-2 text-sm font-semibold">
+                    {value}
+                  </p>
+                </div>
+              ))}
+
+            </div>
+
+
+            <div className="rounded-lg border border-safety-warning/25 bg-safety-warning/10 p-4">
+
+              <p className="flex items-center gap-2 text-xs font-semibold text-safety-warning">
+                <Zap className="h-3.5 w-3.5" />
+                Recommended action
+              </p>
+
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                {alert.action}
+              </p>
+
+            </div>
+
+
+            <div className="grid grid-cols-2 gap-3">
+
+              <Button onClick={onClose}>
+                <Check className="h-4 w-4" />
+                Acknowledge
+              </Button>
+
+              <Button
+                variant="danger"
+                onClick={() =>
+                  onNavigate('reports')
+                }
+              >
+                <ArrowUpRight className="h-4 w-4" />
+                Escalate
+              </Button>
+
+            </div>
+
+          </div>
+        )}
+
+
+        {/* WORKER */}
+        {worker && (
+          <div className="space-y-5 pt-5">
+
+            <div className="flex items-center gap-4">
+
+              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary font-display text-lg font-semibold text-primary">
+                {worker.name
+                  .split(' ')
+                  .map((n) => n[0])
+                  .join('')}
+              </span>
+
+              <div>
+                <p className="text-sm font-semibold">
+                  {worker.role}
+                </p>
+
+                <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                  {worker.id} · {worker.shift}
+                </p>
+
+                <div className="mt-2">
+                  <Badge
+                    tone={
+                      worker.status === 'On site'
+                        ? 'success'
+                        : 'warning'
+                    }
+                  >
+                    <StatusDot
+                      status={
+                        worker.status === 'On site'
+                          ? 'success'
+                          : 'warning'
+                      }
+                    />
+
+                    {worker.status}
+                  </Badge>
+                </div>
+              </div>
+
+            </div>
+
+
+            <div className="grid grid-cols-2 gap-3">
+
+              <div className="rounded-lg border border-border bg-secondary/50 p-3">
+                <p className="text-[10px] text-muted-foreground">
+                  Current zone
+                </p>
+
+                <p className="mt-2 text-sm font-semibold">
+                  {worker.zone}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-border bg-secondary/50 p-3">
+                <p className="text-[10px] text-muted-foreground">
+                  Safety score
+                </p>
+
+                <p className="mt-2 font-display text-lg font-semibold text-primary">
+                  {worker.score}/100
+                </p>
+              </div>
+
+            </div>
+
+
+            <Button
+              className="w-full"
+              onClick={() => onNavigate('safety')}
+            >
+              <ShieldCheck className="h-4 w-4" />
+              View safety history
+            </Button>
+
+          </div>
+        )}
+
+
+        {/* EQUIPMENT */}
+        {asset && (
+          <div className="space-y-5 pt-5">
+
+            <div className="grid grid-cols-2 gap-3">
+
+              {[
+                ['Health score', `${asset.health}%`],
+                ['Operating hours', '8,420 h'],
+                ['Temperature', asset.temp],
+                ['Vibration', asset.vibration],
+                ['Fuel level', '68%'],
+                ['Next service', 'In 42 h'],
+              ].map(([label, value]) => (
+                <div
+                  className="rounded-lg border border-border bg-secondary/50 p-3"
+                  key={label}
+                >
+                  <p className="text-[10px] text-muted-foreground">
+                    {label}
+                  </p>
+
+                  <p className="mt-2 text-sm font-semibold">
+                    {value}
+                  </p>
+                </div>
+              ))}
+
+            </div>
+
+
+            <div className="rounded-lg border border-primary/25 bg-primary/10 p-4">
+
+              <p className="flex items-center gap-2 text-xs font-semibold text-primary">
+                <Sparkles className="h-3.5 w-3.5" />
+                Predictive maintenance
+              </p>
+
+              <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                Based on vibration and thermal telemetry,
+                schedule a bearing inspection in the next
+                42 operating hours.
+              </p>
+
+            </div>
+
+
+            <Button
+              className="w-full"
+              onClick={onClose}
+            >
+              <Wrench className="h-4 w-4" />
+              Schedule maintenance
+            </Button>
+
+          </div>
+        )}
+
+      </aside>
+    </div>
+  );
 }
 function Signup({
   onBack,
@@ -1400,7 +2521,7 @@ function AppShell({
   user: AuthUser | null;
   onLogout: () => void;
 }) {
-  const [activeView, setActiveView] = useState<View>(roleMeta[role].defaultView); const [sidebarOpen, setSidebarOpen] = useState(false); const [notifications, setNotifications] = useState(false); const [selectedAlert, setSelectedAlert] = useState<typeof alerts[number] | null>(null); const [selectedWorker, setSelectedWorker] = useState<typeof workers[number] | null>(null); const [selectedAsset, setSelectedAsset] = useState<typeof equipment[number] | null>(null); const [search, setSearch] = useState(''); const { toast } = useToast(); const meta = roleMeta[role]; const RoleIcon = meta.icon;
+  const [activeView, setActiveView] = useState<View>(roleMeta[role].defaultView); const [sidebarOpen, setSidebarOpen] = useState(false); const [notifications, setNotifications] = useState(false);const [selectedAlert, setSelectedAlert] = useState<IncidentApi | typeof alerts[number] | null>(null); const [selectedWorker, setSelectedWorker] = useState<typeof workers[number] | null>(null); const [selectedAsset, setSelectedAsset] = useState<typeof equipment[number] | null>(null); const [search, setSearch] = useState(''); const { toast } = useToast(); const meta = roleMeta[role]; const RoleIcon = meta.icon;
   const filteredNav = useMemo(() => navItems.filter((item) => roleAccess[role].includes(item.id)), [role]);
   const selectView = (view: View) => { if (!roleAccess[role].includes(view)) { toast({ title: 'Access restricted', description: `This workspace is not available to the ${meta.label.toLowerCase()} role.`, variant: 'destructive' }); return; } setActiveView(view); setSidebarOpen(false); };
   const pageTitle = navItems.find((item) => item.id === activeView)?.label ?? 'Command center';
@@ -1424,7 +2545,7 @@ function AppShell({
 
     <LeaveManagementForm />
   </div>
-)}{activeView === 'equipment' && <EquipmentView onSelect={setSelectedAsset} />}{activeView === 'analytics' && <AnalyticsView />}{activeView === 'reports' && <ReportsView />}{activeView === 'admin' && (
+)}{activeView === 'equipment' && (<EquipmentManagement />)}{activeView === 'analytics' && <AnalyticsView />}{activeView === 'reports' && <ReportsView />}{activeView === 'admin' && (
   <AdminApprovalCenter />
 )}{activeView === 'settings' && <div className="ops-card max-w-2xl p-6"><PanelTitle icon={Settings} eyebrow="Workspace" title="Settings" /><div className="space-y-4"><div className="flex items-center justify-between rounded-lg border border-border p-4"><div><p className="text-sm font-semibold">Live alert sounds</p><p className="mt-1 text-xs text-muted-foreground">Play a sound when a critical alert is received.</p></div><input type="checkbox" defaultChecked className="h-4 w-4 accent-primary" /></div><div className="flex items-center justify-between rounded-lg border border-border p-4"><div><p className="text-sm font-semibold">Compact data density</p><p className="mt-1 text-xs text-muted-foreground">Show more operational rows in tables.</p></div><input type="checkbox" className="h-4 w-4 accent-primary" /></div><Button onClick={() => toast({ title: 'Settings saved', description: 'Workspace preferences updated.' })}>Save preferences</Button></div></div>}</main></div>{notifications && <div className="fixed right-4 top-[84px] z-40 w-[min(360px,calc(100vw-32px))] rounded-xl border border-border bg-surface p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><p className="text-sm font-semibold">Notifications</p><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setNotifications(false)} aria-label="Close notifications"><X className="h-3.5 w-3.5" /></Button></div><div className="space-y-2">{alerts.slice(0, 3).map((alert) => <Button key={alert.id} variant="ghost" className="flex h-auto w-full justify-start gap-3 rounded-lg p-2 text-left" onClick={() => { setSelectedAlert(alert); setNotifications(false); }}><StatusDot status={alert.severity === 'critical' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'info'} /><span className="min-w-0"><span className="block truncate text-xs font-semibold">{alert.title}</span><span className="mt-1 block text-[10px] text-muted-foreground">{alert.time}</span></span></Button>)}</div></div>}<DetailDrawer alert={selectedAlert} worker={selectedWorker} asset={selectedAsset} onClose={() => { setSelectedAlert(null); setSelectedWorker(null); setSelectedAsset(null); }} onNavigate={(view) => { setSelectedAlert(null); selectView(view); }} /></div>;
 }

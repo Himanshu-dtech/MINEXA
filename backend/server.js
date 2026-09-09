@@ -30,6 +30,8 @@ const emergencyRoutes = require("./routes/emergency");
 const emergencyDashboardRoutes = require("./routes/emergencyDashboard");
 const locationRoutes = require("./routes/location");
 const riskRoutes = require("./routes/risk");
+const riskMonitoringRoutes = require("./routes/riskMonitoring");
+const auditRoutes = require("./routes/audit");
 
 
 app.use(cors({
@@ -60,6 +62,8 @@ app.use("/api/v1/emergency",emergencyRoutes);
 app.use("/api/v1/emergency-dashboard",emergencyDashboardRoutes);
 app.use("/api/v1/location",locationRoutes);
 app.use("/api/v1/risk",riskRoutes);
+app.use("/api/v1/risk-monitoring",riskMonitoringRoutes);
+app.use("/api/v1/audit", auditRoutes);
 
 
 app.get('/api/v1/health', (req, res) => {

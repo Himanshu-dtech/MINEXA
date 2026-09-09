@@ -683,3 +683,289 @@ export async function rejectSafetyRegistration(
 
   return data;
 }
+
+// ======================================================
+// EQUIPMENT
+// ======================================================
+
+export type EquipmentApi = {
+  id: number;
+  mine_id: number;
+  equipment_code: string;
+  name: string;
+  equipment_type: string;
+  manufacturer?: string | null;
+  model?: string | null;
+  serial_number?: string | null;
+  status:
+    | 'AVAILABLE'
+    | 'IN_USE'
+    | 'MAINTENANCE'
+    | 'OUT_OF_SERVICE';
+  assigned_worker_id?: number | null;
+  assigned_worker_name?: string | null;
+  employee_code?: string | null;
+  purchase_date?: string | null;
+  last_service_date?: string | null;
+  next_service_date?: string | null;
+  location?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+
+// --------------------------------------------------
+// GET EQUIPMENT FOR CURRENT MINE
+// --------------------------------------------------
+
+export async function getMineEquipment(): Promise<EquipmentApi[]> {
+  const response = await fetch(
+    `${API_URL}/equipment/mine`,
+    {
+      method: 'GET',
+      headers: authHeaders(),
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ??
+        'Failed to fetch equipment',
+    );
+  }
+
+  return data?.equipment ?? [];
+}
+
+export type SafetyMonitoringSummary = {
+  total_equipment: number;
+  unsafe: number;
+  overdue: number;
+  due_soon: number;
+  not_scheduled: number;
+  ok: number;
+};
+
+export type SafetyMonitoringResponse = {
+  summary: SafetyMonitoringSummary;
+  equipment?: any[];
+};
+
+export async function getSafetyMonitoring(): Promise<SafetyMonitoringResponse> {
+  const response = await fetch(
+   `${API_URL}/safety-monitoring/summary`,
+    {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message || 'Failed to load safety monitoring data',
+    );
+  }
+
+  return data;
+}
+// --------------------------------------------------
+// CREATE EQUIPMENT
+// --------------------------------------------------
+
+export async function createEquipment(
+  payload: {
+    equipmentCode: string;
+    name: string;
+    equipmentType: string;
+    manufacturer?: string;
+    model?: string;
+    serialNumber?: string;
+    purchaseDate?: string;
+    lastServiceDate?: string;
+    nextServiceDate?: string;
+    location?: string;
+  },
+): Promise<EquipmentApi> {
+
+  const response = await fetch(
+    `${API_URL}/equipment`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ??
+        'Failed to create equipment',
+    );
+  }
+
+  return data.equipment;
+}
+
+
+// --------------------------------------------------
+// UPDATE EQUIPMENT STATUS
+// --------------------------------------------------
+
+export async function updateEquipmentStatus(
+  equipmentId: number,
+  status: EquipmentApi['status'],
+): Promise<EquipmentApi> {
+
+  const response = await fetch(
+    `${API_URL}/equipment/${equipmentId}/status`,
+    {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        status,
+      }),
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ??
+        'Failed to update equipment status',
+    );
+  }
+
+  return data.equipment;
+}
+
+
+// --------------------------------------------------
+// GET SINGLE EQUIPMENT
+// --------------------------------------------------
+
+export async function getEquipment(
+  equipmentId: number,
+): Promise<EquipmentApi> {
+
+  const response = await fetch(
+    `${API_URL}/equipment/${equipmentId}`,
+    {
+      method: 'GET',
+      headers: authHeaders(),
+    },
+  );
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ??
+        'Failed to fetch equipment',
+    );
+  }
+
+  return data;
+}
+
+export type IncidentApi = {
+  id: number;
+  mine_id: number;
+  reported_by: number;
+  worker_id?: number | null;
+  incident_type:
+    | 'ACCIDENT'
+    | 'HAZARD'
+    | 'NEAR_MISS'
+    | 'UNSAFE_CONDITION'
+    | 'SAFETY_VIOLATION';
+  title: string;
+  description: string;
+  location?: string | null;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  status:
+    | 'OPEN'
+    | 'UNDER_INVESTIGATION'
+    | 'RESOLVED'
+    | 'CLOSED';
+  incident_date: string;
+  resolution_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export async function getMineIncidents(): Promise<IncidentApi[]> {
+  const response = await fetch(
+    `${API_URL}/incidents/mine`,
+    {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message || 'Failed to load incidents',
+    );
+  }
+
+  return data.incidents ?? data;
+}
+
+
+export type CreateIncidentPayload = {
+  incidentType:
+    | 'ACCIDENT'
+    | 'HAZARD'
+    | 'NEAR_MISS'
+    | 'UNSAFE_CONDITION'
+    | 'SAFETY_VIOLATION';
+  title: string;
+  description: string;
+  location?: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  incidentDate?: string;
+};
+
+export async function createIncident(
+  payload: CreateIncidentPayload,
+): Promise<IncidentApi> {
+  const response = await fetch(
+    `${API_URL}/incidents`,
+    {
+      method: 'POST',
+      headers: {
+        ...getAuthHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        incident_type: payload.incidentType,
+        title: payload.title,
+        description: payload.description,
+        location: payload.location || null,
+        severity: payload.severity,
+        incident_date:
+          payload.incidentDate ||
+          new Date().toISOString(),
+      }),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message || 'Failed to create incident',
+    );
+  }
+
+  return data.incident ?? data;
+}

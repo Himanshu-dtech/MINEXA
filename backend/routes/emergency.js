@@ -4,7 +4,9 @@ const router = express.Router();
 const pool = require("../db");
 const auth = require("../middleware/auth");
 const authorize = require("../middleware/authorize");
-
+const {
+    createAuditLog
+} = require("../utils/auditLogger");
 
 // ======================================================
 // Helper: Get logged-in user
@@ -239,6 +241,19 @@ router.post(
                         : null
                 ]
             );
+
+            await createAuditLog({
+    userId: user.id,
+    mineId: user.mine_id,
+    action: "EMERGENCY_CREATED",
+    entityType: "EMERGENCY",
+    entityId: result.rows[0].id,
+    description:
+        `Emergency alert created: ${emergencyType}`,
+    newValues: result.rows[0],
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent")
+});
 
             res.status(201).json({
                 message:
@@ -622,6 +637,24 @@ router.patch(
         emergencyId
     ]
 );
+await createAuditLog({
+    userId: user.id,
+    mineId: user.mine_id,
+    action: "EMERGENCY_ACKNOWLEDGED",
+    entityType: "EMERGENCY",
+    entityId: emergencyId,
+    description:
+        "Emergency alert acknowledged",
+    oldValues: {
+        status: emergency.status
+    },
+    newValues: {
+        status: "ACKNOWLEDGED",
+        acknowledgedBy: user.id
+    },
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent")
+});
 
             res.json({
                 message:
@@ -720,6 +753,25 @@ router.patch(
                     emergencyId
                 ]
             );
+
+            await createAuditLog({
+    userId: user.id,
+    mineId: user.mine_id,
+    action: "EMERGENCY_RESPONSE_STARTED",
+    entityType: "EMERGENCY",
+    entityId: emergencyId,
+    description:
+        "Emergency response started",
+    oldValues: {
+        status: emergency.status
+    },
+    newValues: {
+        status: "RESPONDING",
+        respondingBy: user.id
+    },
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent")
+});
 
             res.json({
                 message:
@@ -836,6 +888,25 @@ router.patch(
         emergencyId
     ]
 );
+
+await createAuditLog({
+    userId: user.id,
+    mineId: user.mine_id,
+    action: "EMERGENCY_RESOLVED",
+    entityType: "EMERGENCY",
+    entityId: emergencyId,
+    description:
+        "Emergency alert resolved",
+    oldValues: {
+        status: emergency.status
+    },
+    newValues: {
+        status: "RESOLVED",
+        resolutionNotes
+    },
+    ipAddress: req.ip,
+    userAgent: req.get("user-agent")
+});
 
             res.json({
                 message:
