@@ -32,7 +32,8 @@ const locationRoutes = require("./routes/location");
 const riskRoutes = require("./routes/risk");
 const riskMonitoringRoutes = require("./routes/riskMonitoring");
 const auditRoutes = require("./routes/audit");
-
+const analyticsRoutes = require('./routes/analytics');
+const reportsRoutes = require('./routes/reports');
 
 app.use(cors({
   origin: 'http://localhost:8080',
@@ -64,6 +65,8 @@ app.use("/api/v1/location",locationRoutes);
 app.use("/api/v1/risk",riskRoutes);
 app.use("/api/v1/risk-monitoring",riskMonitoringRoutes);
 app.use("/api/v1/audit", auditRoutes);
+app.use('/api/v1/analytics', analyticsRoutes);
+app.use('/api/v1/reports',reportsRoutes);
 
 
 app.get('/api/v1/health', (req, res) => {
@@ -92,22 +95,7 @@ app.get('/api/v1/db-test', async (req, res) => {
     });
   }
 });
-app.get('/api/v1/workers', async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, name, employee_code FROM workers ORDER BY id'
-    );
 
-    res.json(result.rows);
-  } catch (error) {
-    console.error('Worker fetch error:', error);
-
-    res.status(500).json({
-      status: 'error',
-      message: 'Failed to fetch workers',
-    });
-  }
-});
 app.post(
   '/api/v1/leave-requests',
   authenticateToken,

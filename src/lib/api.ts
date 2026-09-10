@@ -279,8 +279,57 @@ export async function getCurrentUser(): Promise<AuthUserApi> {
 
   return data.user;
 }
+export async function getMineWorkers(): Promise<WorkerApi[]> {
+  const response = await fetch(
+    `${API_URL}/workers/mine`,
+    {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    }
+  );
 
+  const data = await response.json();
 
+  if (!response.ok) {
+    throw new Error(
+      data?.message || 'Failed to fetch mine workers'
+    );
+  }
+
+  return data.workers ?? [];
+}
+export type AnalyticsSummary = {
+  mine: {
+    id: number;
+  };
+
+  incidents: {
+    total: number;
+    critical: number;
+    open: number;
+  };
+
+  equipment: {
+    total: number;
+    operational: number;
+    maintenance: number;
+    outOfService: number;
+    uptime: number;
+  };
+
+  attendance: {
+    records: number;
+    checkedIn: number;
+    checkedOut: number;
+    late: number;
+  };
+
+  trend: {
+    day: string;
+    incidents: number;
+    highRiskIncidents: number;
+  }[];
+};
 /* =====================================================
    TYPES
 ===================================================== */
@@ -713,7 +762,25 @@ export type EquipmentApi = {
   updated_at: string;
 };
 
+export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
+  const response = await fetch(
+    `${API_URL}/analytics/summary`,
+    {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    }
+  );
 
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message || 'Failed to fetch analytics'
+    );
+  }
+
+  return data;
+}
 // --------------------------------------------------
 // GET EQUIPMENT FOR CURRENT MINE
 // --------------------------------------------------
@@ -947,14 +1014,11 @@ export async function createIncident(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        incident_type: payload.incidentType,
+        incidentType: payload.incidentType,
         title: payload.title,
         description: payload.description,
         location: payload.location || null,
         severity: payload.severity,
-        incident_date:
-          payload.incidentDate ||
-          new Date().toISOString(),
       }),
     },
   );
@@ -968,4 +1032,210 @@ export async function createIncident(
   }
 
   return data.incident ?? data;
+}
+
+export type ManagerDashboardData = {
+  status: 'success';
+
+  mine: {
+    id: number;
+  };
+
+  workers: {
+    total_workers: number;
+  };
+
+  attendance: {
+    checked_in: number;
+    checked_out: number;
+    late: number;
+  };
+
+  incidents: {
+    total: number;
+    open: number;
+    critical: number;
+  };
+
+  health: {
+    workers_with_health_records: number;
+    unfit: number;
+    restricted: number;
+    pending: number;
+    expired: number;
+  };
+
+  shifts: {
+    active_shifts: number;
+  };
+};
+
+export async function getManagerDashboard(): Promise<ManagerDashboardData> {
+  const response = await fetch(
+    `${API_URL}/dashboard/manager`,
+    {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    },
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+        'Failed to load manager dashboard',
+    );
+  }
+
+  return data;
+}
+
+export type WorkerApi = {
+  id: number;
+  name: string;
+  employee_code: string;
+  phone?: string | null;
+  department?: string | null;
+  designation?: string | null;
+  mine_id: number;
+  mine_name?: string | null;
+};
+
+export type ReportsSummary = {
+  mine: {
+    id: number;
+  };
+
+  summary: {
+    totalIncidents: number;
+    closedIncidents: number;
+    highPriority: number;
+    totalEquipment: number;
+    operationalEquipment: number;
+    outOfService: number;
+    attendanceRecords: number;
+    lateRecords: number;
+  };
+
+  recentIncidents: {
+    id: number;
+    title: string;
+    incident_type: string;
+    severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+    status: 'OPEN' | 'UNDER_INVESTIGATION' | 'RESOLVED' | 'CLOSED';
+    location?: string | null;
+    incident_date: string;
+  }[];
+};
+
+export async function getReportsSummary(): Promise<ReportsSummary> {
+  const response = await fetch(
+    `${API_URL}/reports/summary`,
+    {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message || 'Failed to fetch reports summary'
+    );
+  }
+
+  return data;
+}
+
+export type AttendanceApi = {
+  id: number;
+  attendance_date: string;
+  check_in?: string | null;
+  check_out?: string | null;
+  status: string;
+  worker_id: number;
+  worker_name: string;
+  employee_code: string;
+  shift_id: number;
+  shift_name: string;
+  mine_name: string;
+};
+
+export async function getMineAttendance(): Promise<AttendanceApi[]> {
+  const response = await fetch(
+    `${API_URL}/attendance/mine`,
+    {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message || 'Failed to fetch mine attendance'
+    );
+  }
+
+  return data.attendance ?? [];
+}
+
+export type SafetyDashboardData = {
+  mine: {
+    id: number;
+  };
+
+  incidents: {
+    total: number;
+    open: number;
+    critical: number;
+  };
+
+  health: {
+    workers_with_health_records: number;
+    unfit: number;
+    restricted: number;
+    pending: number;
+    expired: number;
+  };
+
+  attendance: {
+    checked_in: number;
+    late: number;
+  };
+
+  workersNeedingAttention: {
+    worker_id: number;
+    name: string;
+    employee_code: string;
+    medical_status:
+      | 'UNFIT'
+      | 'FIT_WITH_RESTRICTIONS'
+      | 'PENDING'
+      | string;
+    fitness_expiry_date?: string | null;
+  }[];
+};
+
+export async function getSafetyDashboard(): Promise<SafetyDashboardData> {
+  const response = await fetch(
+    `${API_URL}/dashboard/safety`,
+    {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message || 'Failed to fetch safety dashboard'
+    );
+  }
+
+  return data;
 }

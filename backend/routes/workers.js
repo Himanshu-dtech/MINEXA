@@ -77,7 +77,84 @@ WHERE u.id = $1
         }
     }
 );
+router.get(
+    '/mine',
+    authenticateToken,
+    requireRoles('MINE_MANAGER', 'SAFETY_OFFICER'),
+    async (req, res) => {
+        try {
+            const userResult = await pool.query(
+                `
+                SELECT mine_id
+                FROM users
+                WHERE id = $1
+                  AND role IN ('MINE_MANAGER', 'SAFETY_OFFICER')
+                `,
+                [req.user.userId]
+            );
 
+            if (userResult.rows.length === 0) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: 'User account not found.'
+                });
+            }
+
+            const mineId = userResult.rows[0].mine_id;
+
+            if (!mineId) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'User is not assigned to a mine.'
+                });
+            }
+
+            const result = await pool.query(
+    `
+    SELECT
+        w.id,
+        w.name,
+        w.employee_code,
+        w.phone,
+        w.mine_id,
+        m.name AS mine_name,
+
+        r.department,
+        r.designation
+
+    FROM workers w
+
+    LEFT JOIN mines m
+        ON m.id = w.mine_id
+
+    LEFT JOIN registration_requests r
+        ON r.employee_id = w.employee_code
+       AND r.mine_id = w.mine_id
+       AND r.requested_role = 'FIELD_WORKER'
+       AND r.status = 'APPROVED'
+
+    WHERE w.mine_id = $1
+
+    ORDER BY w.id ASC
+    `,
+    [mineId]
+);
+
+            return res.status(200).json({
+                status: 'success',
+                workers: result.rows
+            });
+
+        } catch (error) {
+            console.error('Mine workers fetch error:', error);
+
+            return res.status(500).json({
+                status: 'error',
+                message: 'Failed to fetch mine workers.'
+            });
+        }
+    }
+);
 router.put(
     '/me',
     authenticateToken,

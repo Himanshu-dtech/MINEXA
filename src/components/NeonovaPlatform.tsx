@@ -63,6 +63,7 @@ import {
   Zap,
   HeartPulse,
   UserCheck,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   Area,
@@ -93,7 +94,7 @@ import ManagerApprovalCenter from './ManagerApprovalCenter';
 import SafetyVerificationCenter from './SafetyVerificationCenter';
 import ChangePassword from './ChangePassword';
 import EquipmentManagement from './EquipmentManagement';
-import { getMineIncidents, createIncident, type IncidentApi,} from '@/lib/api';
+import { getMineIncidents, createIncident,getManagerDashboard,getMineEquipment,getMineWorkers,getAnalyticsSummary, getReportsSummary,getMineAttendance,getSafetyDashboard,type IncidentApi,type ManagerDashboardData,type EquipmentApi,type WorkerApi,type AnalyticsSummary,type ReportsSummary,type AttendanceApi,type SafetyDashboardData,} from '@/lib/api';
 
 
 type Role = 'admin' | 'manager' | 'safety' | 'worker';
@@ -608,9 +609,273 @@ function RoleSelect({ onSelect, onBack }: { onSelect: (role: Role) => void; onBa
   return <div className="min-h-screen bg-background px-5 py-8 text-foreground sm:px-10"><div className="mx-auto max-w-5xl"><div className="flex items-center justify-between"><LogoMark /><Button variant="ghost" size="sm" onClick={onBack}><ArrowDownRight className="h-4 w-4 rotate-45" /> Back</Button></div><div className="mx-auto mt-20 max-w-2xl text-center"><p className="text-[11px] font-bold uppercase tracking-[.2em] text-primary">Workspace access</p><h1 className="mt-4 font-display text-4xl font-semibold tracking-tight">Choose your operating view.</h1><p className="mt-4 text-sm leading-6 text-muted-foreground">Your role shapes the signals, workflows, and decisions surfaced in the command center.</p></div><div className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{(Object.keys(roleMeta) as Role[]).map((role) => { const meta = roleMeta[role]; const Icon = meta.icon; return <Button key={role} variant="outline" className="group flex h-auto min-h-[220px] flex-col items-start justify-between rounded-2xl p-5 text-left hover:border-primary/60 hover:bg-surface" onClick={() => onSelect(role)}><div className="flex w-full items-start justify-between"><span className={cx('flex h-11 w-11 items-center justify-center rounded-xl bg-secondary', meta.color)}><Icon className="h-5 w-5" /></span><ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" /></div><span><span className="block font-display text-lg font-semibold text-foreground">{meta.label}</span><span className="mt-2 block text-xs leading-5 text-muted-foreground">{meta.description}</span></span></Button>; })}</div><p className="mt-12 text-center text-xs text-muted-foreground">Need a different access level? <span className="text-primary">Contact your site administrator.</span></p></div></div>;
 }
 
-function MapSurface({ compact = false, onAlert }: { compact?: boolean; onAlert?: () => void }) {
+function LiveMineMapView({
+  toast,
+  onIncidentSelect,
+}: {
+  toast: (args: {
+    title: string;
+    description: string;
+  }) => void;
+  onIncidentSelect: (incident: IncidentApi) => void;
+}) {
+  const [mineEquipment, setMineEquipment] = useState<EquipmentApi[]>([]);
+  const [mineIncidents, setMineIncidents] = useState<IncidentApi[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadMapData = async () => {
+      try {
+        setLoading(true);
+
+        const [equipmentData, incidentData] = await Promise.all([
+          getMineEquipment(),
+          getMineIncidents(),
+        ]);
+
+        setMineEquipment(equipmentData);
+        setMineIncidents(incidentData);
+      } catch (error) {
+        console.error('Failed to load mine map data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMapData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[520px] items-center justify-center rounded-xl border border-border/70 bg-[#0d1920]">
+        <p className="text-sm text-muted-foreground">
+          Loading live mine data...
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <MapSurface
+      equipment={mineEquipment}
+      incidents={mineIncidents}
+      onIncidentSelect={onIncidentSelect}
+      onAlert={() =>
+        toast({
+          title: 'Map filters opened',
+          description:
+            'Filter by sensors, workers, equipment, or risk level.',
+        })
+      }
+    />
+  );
+}
+
+function MapSurface({
+  compact = false,
+  onAlert,
+  onIncidentSelect,
+  equipment = [],
+  incidents = [],
+}: {
+  compact?: boolean;
+  onAlert?: () => void;
+  onIncidentSelect?: (incident: IncidentApi) => void;
+  equipment?: EquipmentApi[];
+  incidents?: IncidentApi[];
+}) {
   const [zoom, setZoom] = useState(1);
-  return <div className={cx('relative overflow-hidden rounded-xl border border-border/70 bg-[#0d1920]', compact ? 'h-[260px]' : 'min-h-[520px]')}><div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'linear-gradient(hsl(var(--primary)/.08) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)/.08) 1px, transparent 1px)', backgroundSize: '38px 38px' }} /><div className="absolute inset-0 flex items-center justify-center overflow-hidden"><svg viewBox="0 0 900 500" className="h-full w-full transition-transform duration-300" style={{ transform: `scale(${zoom})` }}><path d="M24 404 L160 340 L245 355 L320 274 L432 313 L516 214 L634 257 L753 145 L878 179" fill="none" stroke="hsl(var(--primary)/.15)" strokeWidth="70" /><path d="M24 404 L160 340 L245 355 L320 274 L432 313 L516 214 L634 257 L753 145 L878 179" fill="none" stroke="hsl(var(--primary)/.7)" strokeWidth="2" /><path d="M46 460 L165 388 L274 402 L350 330 L456 361 L548 265 L662 302 L778 204 L894 235" fill="none" stroke="hsl(var(--secondary)/.4)" strokeWidth="2" /><path d="M92 323 L201 273 L290 291 L365 210 L472 243 L565 150 L682 192 L795 84" fill="none" stroke="hsl(var(--warning)/.38)" strokeWidth="2" strokeDasharray="7 7" /><path d="M20 128 L180 96 L260 130 L350 89 L457 121 L552 62 L681 110 L875 43" fill="none" stroke="hsl(var(--danger)/.25)" strokeWidth="2" /><text x="91" y="375" fill="hsl(var(--muted-foreground))" fontSize="14" fontWeight="600">ZONE A</text><text x="368" y="248" fill="hsl(var(--muted-foreground))" fontSize="14" fontWeight="600">ZONE B</text><text x="610" y="286" fill="hsl(var(--muted-foreground))" fontSize="14" fontWeight="600">ZONE C</text><text x="746" y="110" fill="hsl(var(--muted-foreground))" fontSize="14" fontWeight="600">ZONE D</text>{[[160,340,'primary'],[245,355,'secondary'],[320,274,'warning'],[516,214,'danger'],[634,257,'primary'],[753,145,'warning'],[432,313,'secondary'],[682,192,'primary']].map(([x,y,t], i) => <g key={i}><circle cx={x as number} cy={y as number} r="16" fill={`hsl(var(--${t === 'primary' ? 'primary' : t === 'secondary' ? 'secondary' : t === 'warning' ? 'warning' : 'danger'}) / .12)`} /><circle cx={x as number} cy={y as number} r="5" fill={`hsl(var(--${t === 'primary' ? 'primary' : t === 'secondary' ? 'secondary' : t === 'warning' ? 'warning' : 'danger'}))`} /><circle cx={x as number} cy={y as number} r="2" fill="hsl(var(--background))" /></g>)}</svg></div><div className="absolute inset-x-4 top-4 flex items-start justify-between"><div className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 backdrop-blur"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-primary">Live mine map</p><p className="mt-1 text-xs text-muted-foreground">Pit 04 · 2.4 km² monitored</p></div><div className="flex gap-1.5"><Button variant="outline" size="icon" className="h-8 w-8 bg-background/80" onClick={() => setZoom(Math.min(1.5, zoom + .1))} aria-label="Zoom in"><Plus className="h-3.5 w-3.5" /></Button><Button variant="outline" size="icon" className="h-8 w-8 bg-background/80" onClick={() => setZoom(Math.max(.8, zoom - .1))} aria-label="Zoom out"><Minus className="h-3.5 w-3.5" /></Button></div></div>{!compact && <><div className="absolute bottom-4 left-4 flex flex-wrap gap-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur"><span className="flex items-center gap-1.5"><StatusDot status="success" /> Stable</span><span className="flex items-center gap-1.5"><StatusDot status="warning" /> Monitor</span><span className="flex items-center gap-1.5"><StatusDot status="danger" /> Critical</span><span className="flex items-center gap-1.5"><MapPin className="h-3 w-3 text-secondary" /> Worker / asset</span></div><Button variant="outline" size="sm" className="absolute bottom-4 right-4 bg-background/85" onClick={onAlert}><SlidersHorizontal className="h-3.5 w-3.5" /> Filters</Button></>}</div>;
+  const [selectedPoint, setSelectedPoint] = useState<
+  (typeof mapPoints)[number] | null
+>(null);
+  const mapPoints = [
+ ...equipment
+  .filter((item) => item.location)
+  .map((item) => {
+    const { x, y } = getMapCoordinates(item.location);
+
+    return {
+      id: `equipment-${item.id}`,
+      x,
+      y,
+      type: 'equipment' as const,
+      status: item.status,
+      name: item.name,
+      location: item.location!,
+    };
+  }),
+
+...incidents
+  .filter((item) => item.location)
+  .map((item) => {
+    const { x, y } = getMapCoordinates(item.location);
+
+    return {
+      id: `incident-${item.id}`,
+      x,
+      y,
+      type: 'incident' as const,
+      status: item.severity,
+      name: item.title,
+      location: item.location!,
+    };
+  }),
+];
+  return <div className={cx('relative overflow-hidden rounded-xl border border-border/70 bg-[#0d1920]', compact ? 'h-[260px]' : 'min-h-[520px]')}><div className="absolute inset-0 opacity-50" style={{ backgroundImage: 'linear-gradient(hsl(var(--primary)/.08) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)/.08) 1px, transparent 1px)', backgroundSize: '38px 38px' }} /><div className="absolute inset-0 flex items-center justify-center overflow-hidden"><svg viewBox="0 0 900 500" className="h-full w-full transition-transform duration-300" style={{ transform: `scale(${zoom})` }}><path d="M24 404 L160 340 L245 355 L320 274 L432 313 L516 214 L634 257 L753 145 L878 179" fill="none" stroke="hsl(var(--primary)/.15)" strokeWidth="70" /><path d="M24 404 L160 340 L245 355 L320 274 L432 313 L516 214 L634 257 L753 145 L878 179" fill="none" stroke="hsl(var(--primary)/.7)" strokeWidth="2" /><path d="M46 460 L165 388 L274 402 L350 330 L456 361 L548 265 L662 302 L778 204 L894 235" fill="none" stroke="hsl(var(--secondary)/.4)" strokeWidth="2" /><path d="M92 323 L201 273 L290 291 L365 210 L472 243 L565 150 L682 192 L795 84" fill="none" stroke="hsl(var(--warning)/.38)" strokeWidth="2" strokeDasharray="7 7" /><path d="M20 128 L180 96 L260 130 L350 89 L457 121 L552 62 L681 110 L875 43" fill="none" stroke="hsl(var(--danger)/.25)" strokeWidth="2" /><text x="91" y="375" fill="hsl(var(--muted-foreground))" fontSize="14" fontWeight="600">ZONE A</text><text x="368" y="248" fill="hsl(var(--muted-foreground))" fontSize="14" fontWeight="600">ZONE B</text><text x="610" y="286" fill="hsl(var(--muted-foreground))" fontSize="14" fontWeight="600">ZONE C</text><text x="746" y="110" fill="hsl(var(--muted-foreground))" fontSize="14" fontWeight="600">ZONE D</text>
+{mapPoints.map((point) => {
+  const isIncident = point.type === 'incident';
+
+  const isCritical = isIncident
+    ? point.status === 'CRITICAL'
+    : point.status === 'OUT_OF_SERVICE';
+
+  const isWarning = isIncident
+    ? point.status === 'HIGH'
+    : point.status === 'MAINTENANCE';
+
+  const fillColor = isCritical
+    ? '#ff5c6c'
+    : isWarning
+    ? '#ffb52e'
+    : '#20e887';
+
+  const glowColor = isCritical
+    ? 'rgba(255, 92, 108, 0.18)'
+    : isWarning
+    ? 'rgba(255, 181, 46, 0.18)'
+    : 'rgba(32, 232, 135, 0.18)';
+
+  return (
+    <g
+      key={point.id}
+      className="cursor-pointer"
+      onClick={() => setSelectedPoint(point)}
+    >
+      <circle
+        cx={point.x}
+        cy={point.y}
+        r="18"
+        fill={glowColor}
+      />
+
+      <circle
+        cx={point.x}
+        cy={point.y}
+        r="7"
+        fill={fillColor}
+        stroke="#0d1920"
+        strokeWidth="2"
+      />
+
+      <circle
+        cx={point.x}
+        cy={point.y}
+        r="2.5"
+        fill="#0d1920"
+      />
+    </g>
+  );
+})}
+  </svg></div><div className="absolute inset-x-4 top-4 flex items-start justify-between"><div className="rounded-lg border border-border/70 bg-background/80 px-3 py-2 backdrop-blur"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-primary">Live mine map</p><p className="mt-1 text-xs text-muted-foreground">Pit 04 · 2.4 km² monitored</p></div><div className="flex gap-1.5"><Button variant="outline" size="icon" className="h-8 w-8 bg-background/80" onClick={() => setZoom(Math.min(1.5, zoom + .1))} aria-label="Zoom in"><Plus className="h-3.5 w-3.5" /></Button><Button variant="outline" size="icon" className="h-8 w-8 bg-background/80" onClick={() => setZoom(Math.max(.8, zoom - .1))} aria-label="Zoom out"><Minus className="h-3.5 w-3.5" /></Button></div></div>{!compact && <><div className="absolute bottom-4 left-4 flex flex-wrap gap-3 rounded-lg border border-border/70 bg-background/85 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur"><span className="flex items-center gap-1.5"><StatusDot status="success" /> Stable</span><span className="flex items-center gap-1.5"><StatusDot status="warning" /> Monitor</span><span className="flex items-center gap-1.5"><StatusDot status="danger" /> Critical</span><span className="flex items-center gap-1.5"><MapPin className="h-3 w-3 text-secondary" /> Worker / asset</span></div><Button variant="outline" size="sm" className="absolute bottom-4 right-4 bg-background/85" onClick={onAlert}><SlidersHorizontal className="h-3.5 w-3.5" /> Filters</Button></>}{selectedPoint && (
+  <div className="absolute right-4 top-4 z-20 w-[280px] rounded-xl border border-border bg-background/95 p-4 shadow-xl backdrop-blur">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[.16em] text-primary">
+          {selectedPoint.type === 'incident'
+            ? 'Incident'
+            : 'Equipment'}
+        </p>
+
+        <h3 className="mt-1 text-sm font-semibold text-foreground">
+          {selectedPoint.name}
+        </h3>
+      </div>
+
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        onClick={() => setSelectedPoint(null)}
+      >
+        <X className="h-4 w-4" />
+      </Button>
+    </div>
+
+    <div className="mt-4 space-y-3 text-xs">
+      <div>
+        <p className="text-muted-foreground">Location</p>
+        <p className="mt-1 font-medium text-foreground">
+          {selectedPoint.location}
+        </p>
+      </div>
+
+      <div>
+        <p className="text-muted-foreground">
+          {selectedPoint.type === 'incident'
+            ? 'Severity'
+            : 'Status'}
+        </p>
+
+        <p className="mt-1 font-medium text-foreground">
+          {selectedPoint.status}
+        </p>
+      </div>
+    </div>
+
+    {selectedPoint.type === 'incident' ? (
+      <Button
+        className="mt-4 w-full"
+        size="sm"
+        onClick={() => {
+  const incident = incidents.find(
+    (item) => item.id === Number(selectedPoint.id.replace('incident-', ''))
+  );
+
+  setSelectedPoint(null);
+
+  if (incident) {
+    onIncidentSelect?.(incident);
+  }
+}}
+      >
+        Open incident
+      </Button>
+    ) : (
+      <Button
+        className="mt-4 w-full"
+        size="sm"
+        variant="outline"
+        onClick={() => setSelectedPoint(null)}
+      >
+        Close
+      </Button>
+    )}
+  </div>
+)}</div>;
+}
+function getMapCoordinates(location?: string | null) {
+  const value = (location || '').toLowerCase();
+
+  if (value.includes('east') || value.includes('zone a')) {
+    return { x: 160, y: 340 };
+  }
+
+  if (value.includes('haul') || value.includes('zone b')) {
+    return { x: 320, y: 274 };
+  }
+
+  if (value.includes('conveyor') || value.includes('zone c')) {
+    return { x: 516, y: 214 };
+  }
+
+  if (
+    value.includes('crusher') ||
+    value.includes('zone d')
+  ) {
+    return { x: 753, y: 145 };
+  }
+
+  return { x: 432, y: 313 };
 }
 
 function DashboardView({
@@ -621,18 +886,384 @@ function DashboardView({
 }: {
   role: Role;
   onNavigate: (view: View) => void;
-  onAlert: (alert: typeof alerts[number]) => void;
+onAlert: (alert: IncidentApi | typeof alerts[number]) => void;
   user: AuthUser | null;
 }) {
+  const [dashboardData, setDashboardData] = useState<ManagerDashboardData | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState('');
+  
+  // Step 1 — Add incident state
+  const [recentIncidents, setRecentIncidents] = useState<IncidentApi[]>([]);
+  const [incidentsLoading, setIncidentsLoading] = useState(true);
+  const [liveTrendData, setLiveTrendData] = useState<{ day: string; risk: number }[]>([]);
+  const [mineEquipment, setMineEquipment] = useState<EquipmentApi[]>([]);
+  const [equipmentLoading, setEquipmentLoading] = useState(true); 
+  // Existing Dashboard Effect
+  useEffect(() => {
+    async function loadDashboard() {
+      try {
+        setDashboardLoading(true);
+        setDashboardError('');
+
+        const data = await getManagerDashboard();
+
+        setDashboardData(data);
+      } catch (error) {
+        console.error('Failed to load manager dashboard:', error);
+
+        setDashboardError(
+          error instanceof Error
+            ? error.message
+            : 'Failed to load dashboard.',
+        );
+      } finally {
+        setDashboardLoading(false);
+      }
+    }
+
+    loadDashboard();
+  }, []);
+
+  // Step 2 (Part A) — Load incidents Effect
+  useEffect(() => {
+    if (role !== 'manager') {
+      setIncidentsLoading(false);
+      return;
+    }
+    
+    const loadIncidents = async () => {
+      try {
+        setIncidentsLoading(true);
+
+        const data = await getMineIncidents();
+
+        const sorted = [...data]
+          .sort(
+            (a, b) =>
+              new Date(b.created_at || b.incident_date).getTime() -
+              new Date(a.created_at || a.incident_date).getTime()
+          )
+          .slice(0, 4);
+
+        setRecentIncidents(sorted);
+      } catch (error) {
+        console.error('Failed to load incidents:', error);
+      } finally {
+        setIncidentsLoading(false);
+      }
+    };
+
+    loadIncidents();
+  }, [role]);
+
+  // Step 2 (Part B) — Create the trend from real incidents
+  useEffect(() => {
+    if (recentIncidents.length === 0) {
+      setLiveTrendData([]);
+      return;
+    }
+
+    const severityWeight: Record<string, number> = {
+      LOW: 1,
+      MEDIUM: 2,
+      HIGH: 3,
+      CRITICAL: 4,
+    };
+
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date();
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() - (6 - index));
+      return date;
+    });
+
+    const trend = days.map((day) => {
+      const nextDay = new Date(day);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const dayRisk = recentIncidents
+        .filter((incident) => {
+          // Using a fallback for incident_date / created_at just in case
+          const incidentDate = new Date(incident.created_at || incident.incident_date);
+
+          return incidentDate >= day && incidentDate < nextDay;
+        })
+        .reduce(
+          (total, incident) =>
+            total + (severityWeight[incident.severity] || 0),
+          0
+        );
+
+      return {
+        day: day.toLocaleDateString('en-IN', {
+          weekday: 'short',
+        }),
+        risk: dayRisk,
+      };
+    });
+
+    setLiveTrendData(trend);
+  }, [recentIncidents]);
+useEffect(() => {
+  if (role !== 'manager') {
+    setEquipmentLoading(false);
+    return;
+  }
+
+  const loadEquipment = async () => {
+    try {
+      setEquipmentLoading(true);
+
+      const data = await getMineEquipment();
+
+      setMineEquipment(data);
+    } catch (error) {
+      console.error('Failed to load mine equipment:', error);
+    } finally {
+      setEquipmentLoading(false);
+    }
+  };
+
+  loadEquipment();
+}, [role]);
+
   if (role === 'worker') {
+    return (
+      <WorkerMobileView
+        onNavigate={onNavigate}
+        user={user}
+      />
+    );
+  }
+
   return (
-    <WorkerMobileView
-      onNavigate={onNavigate}
-      user={user}
-    />
+    <div className="space-y-6">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs text-muted-foreground">{new Date().toLocaleDateString('en-IN', {weekday: 'long',day: 'numeric', month: 'long', year: 'numeric',})}{' '}· Shift A</p>
+          <h1 className="mt-2 font-display text-2xl font-semibold tracking-tight sm:text-3xl"> Good evening, {user?.name || 'Operator'}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Here’s the operational picture for{' '}<span className="text-foreground">Pit 04</span>.</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => onNavigate('reports')}>
+            <Download className="h-3.5 w-3.5" /> Export view
+          </Button>
+          <Button size="sm" onClick={() => onNavigate('safety')}>
+            <AlertTriangle className="h-3.5 w-3.5" /> Review alerts{' '}
+            <span className="rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px]">
+              {dashboardData?.incidents.open ?? 0}
+            </span>
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Active workers"
+          value={
+            dashboardLoading
+              ? '...'
+              : String(dashboardData?.workers.total_workers ?? 0)
+          }
+          change="Total workers"
+          trend="up"
+          icon={Users}
+          tone="info"
+        />
+
+        <MetricCard
+          label="Checked in"
+          value={
+            dashboardLoading
+              ? '...'
+              : String(dashboardData?.attendance.checked_in ?? 0)
+          }
+          change="Currently on shift"
+          trend="up"
+          icon={ShieldCheck}
+          tone="success"
+        />
+
+        <MetricCard
+          label="Open incidents"
+          value={
+            dashboardLoading
+              ? '...'
+              : String(dashboardData?.incidents.open ?? 0)
+          }
+          change={`${dashboardData?.incidents.critical ?? 0} critical`}
+          trend="flat"
+          icon={AlertTriangle}
+          tone="warning"
+        />
+
+        <MetricCard
+          label="Active shifts"
+          value={
+            dashboardLoading
+              ? '...'
+              : String(dashboardData?.shifts.active_shifts ?? 0)
+          }
+          change="Currently active"
+          trend="up"
+          icon={Activity}
+          tone="primary"
+        />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,.75fr)]">
+        <div className="ops-card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <PanelTitle icon={Map} eyebrow="Monitor" title="Live mine map" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('mine')}>Open full map <ChevronRight className="h-4 w-4" /></Button>} />
+          </div>
+ <MapSurface
+  compact
+  equipment={mineEquipment}
+  incidents={recentIncidents}
+  onAlert={() => onNavigate('mine')}
+  onIncidentSelect={onAlert}
+/>
+        </div>
+        
+        <div className="ops-card p-5">
+          <PanelTitle icon={Bell} eyebrow="Respond" title="Active alerts" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('safety')}>View all <ChevronRight className="h-4 w-4" /></Button>} />
+          
+          <div className="space-y-1">
+            {incidentsLoading ? (
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                Loading alerts...
+              </div>
+            ) : recentIncidents.length === 0 ? (
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                No active incidents
+              </div>
+            ) : (
+              recentIncidents.map((incident) => (
+                <Button
+                  variant="ghost"
+                  key={incident.id}
+                  className="flex h-auto w-full items-start justify-start gap-3 rounded-lg px-2.5 py-3 text-left hover:bg-secondary"
+                  onClick={() => onNavigate('safety')}
+                >
+                  <span
+                    className={cx(
+                      'mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg',
+                      incident.severity === 'CRITICAL'
+                        ? 'bg-safety-danger/10 text-safety-danger'
+                        : incident.severity === 'HIGH'
+                        ? 'bg-safety-warning/10 text-safety-warning'
+                        : 'bg-secondary text-muted-foreground'
+                    )}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                  </span>
+
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-semibold text-foreground">
+                      {incident.title}
+                    </span>
+
+                    <span className="mt-1 block truncate text-[10px] text-muted-foreground">
+                      {incident.location || 'Unknown location'} ·{' '}
+                      {new Date(incident.created_at || incident.incident_date).toLocaleString()}
+                    </span>
+                  </span>
+
+                  <ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                </Button>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1.25fr_.75fr]">
+        <div className="ops-card p-5">
+          {/* Step 4 — Remove the fake 18% lower */}
+          <PanelTitle 
+            icon={Activity} 
+            eyebrow="Analyze" 
+            title="Risk trend" 
+            action={
+              <Badge tone="neutral">
+                7-day incident trend
+              </Badge>
+            } 
+          />
+          <div className="h-[220px]">
+            <ResponsiveContainer width="100%" height="100%">
+              {/* Step 3 — Dynamically load liveTrendData */}
+              <AreaChart data={liveTrendData}>
+                <defs>
+                  <linearGradient id="riskFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={.25} />
+                    <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} axisLine={false} tickLine={false} width={24} />
+                <Tooltip contentStyle={{ background: 'hsl(var(--surface))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))', fontSize: 11 }} />
+                <Area type="monotone" dataKey="risk" stroke="hsl(var(--primary))" fill="url(#riskFill)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+        <div className="ops-card p-5">
+  <PanelTitle
+    icon={Zap}
+    eyebrow="Operations"
+    title="Shift status"
+  />
+
+  <div className="mt-6 space-y-5">
+
+    <div>
+      <p className="text-xs text-muted-foreground">
+        Active shifts
+      </p>
+
+      <p className="mt-1 font-display text-3xl font-semibold">
+        {dashboardLoading
+          ? '...'
+          : dashboardData?.shifts.active_shifts ?? 0}
+      </p>
+    </div>
+
+    <div className="border-t border-border pt-5">
+      <p className="text-xs text-muted-foreground">
+        Workers currently checked in
+      </p>
+
+      <p className="mt-1 font-display text-3xl font-semibold">
+        {dashboardLoading
+          ? '...'
+          : dashboardData?.attendance.checked_in ?? 0}
+      </p>
+    </div>
+
+    <div className="border-t border-border pt-5">
+      <p className="text-xs text-muted-foreground">
+        Workers checked out
+      </p>
+
+      <p className="mt-1 font-semibold">
+        {dashboardLoading
+          ? '...'
+          : dashboardData?.attendance.checked_out ?? 0}
+      </p>
+    </div>
+
+  </div>
+
+  <div className="mt-6 border-t border-border pt-4 text-xs text-muted-foreground">
+    <span className="text-primary">Live</span> · attendance and shift data
+  </div>
+</div>
+      </div>
+    </div>
   );
-}
-  return <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Thursday, 12 June 2025 · Shift A</p><h1 className="mt-2 font-display text-2xl font-semibold tracking-tight sm:text-3xl">Good evening, Operator</h1><p className="mt-2 text-sm text-muted-foreground">Here’s the operational picture for <span className="text-foreground">Pit 04</span>.</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => onNavigate('reports')}><Download className="h-3.5 w-3.5" /> Export view</Button><Button size="sm" onClick={() => onNavigate('safety')}><AlertTriangle className="h-3.5 w-3.5" /> Review alerts <span className="rounded bg-primary-foreground/20 px-1.5 py-0.5 text-[10px]">4</span></Button></div></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Safety score" value="94.2%" change="+2.4%" trend="up" icon={ShieldCheck} tone="success" /><MetricCard label="Active workers" value="1,248" change="+38 today" trend="up" icon={Users} tone="info" /><MetricCard label="Equipment health" value="93.4%" change="+1.8%" trend="up" icon={Gauge} tone="primary" /><MetricCard label="Sensors online" value="98.7%" change="2 offline" trend="flat" icon={RadioTower} tone="warning" /></div><div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(340px,.75fr)]"><div className="ops-card p-5"><div className="mb-4 flex items-center justify-between"><PanelTitle icon={Map} eyebrow="Monitor" title="Live mine map" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('mine')}>Open full map <ChevronRight className="h-4 w-4" /></Button>} /></div><MapSurface compact onAlert={() => onNavigate('mine')} /></div><div className="ops-card p-5"><PanelTitle icon={Bell} eyebrow="Respond" title="Active alerts" action={<Button variant="ghost" size="sm" onClick={() => onNavigate('safety')}>View all <ChevronRight className="h-4 w-4" /></Button>} /><div className="space-y-1">{alerts.map((alert) => <Button variant="ghost" key={alert.id} className="flex h-auto w-full items-start justify-start gap-3 rounded-lg px-2.5 py-3 text-left hover:bg-secondary" onClick={() => onAlert(alert)}><span className={cx('mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', alert.severity === 'critical' ? 'bg-safety-danger/10 text-safety-danger' : alert.severity === 'warning' ? 'bg-safety-warning/10 text-safety-warning' : 'bg-secondary text-secondary')}><AlertTriangle className="h-3.5 w-3.5" /></span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold text-foreground">{alert.title}</span><span className="mt-1 block truncate text-[10px] text-muted-foreground">{alert.location} · {alert.time}</span></span><ChevronRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" /></Button>)}</div></div></div><div className="grid gap-6 lg:grid-cols-[1.25fr_.75fr]"><div className="ops-card p-5"><PanelTitle icon={Activity} eyebrow="Analyze" title="Risk trend" action={<Badge tone="success"><ArrowDownRight className="h-3 w-3 rotate-45" /> 18% lower</Badge>} /><div className="h-[220px]"><ResponsiveContainer width="100%" height="100%"><AreaChart data={trendData}><defs><linearGradient id="riskFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={.25} /><stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} axisLine={false} tickLine={false} width={24} /><Tooltip contentStyle={{ background: 'hsl(var(--surface))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))', fontSize: 11 }} /><Area type="monotone" dataKey="risk" stroke="hsl(var(--primary))" fill="url(#riskFill)" strokeWidth={2} /></AreaChart></ResponsiveContainer></div></div><div className="ops-card p-5"><PanelTitle icon={Zap} eyebrow="Throughput" title="Shift productivity" /><div className="flex items-center gap-5"><div className="relative h-28 w-28 shrink-0 rounded-full" style={{ background: 'conic-gradient(hsl(var(--secondary)) 0 84%, hsl(var(--border)) 84% 100%)' }}><div className="absolute inset-[7px] flex items-center justify-center rounded-full bg-surface"><span className="font-display text-2xl font-semibold">84%</span></div></div><div className="space-y-3 text-xs"><div><p className="text-muted-foreground">Material moved</p><p className="mt-1 font-semibold">18,420 <span className="font-normal text-muted-foreground">tonnes</span></p></div><div><p className="text-muted-foreground">vs target</p><p className="mt-1 font-semibold text-primary">+6.8%</p></div></div></div><div className="mt-6 border-t border-border pt-4 text-xs text-muted-foreground"><span className="text-primary">On track</span> · next shift handover in 01:18:42</div></div></div></div>;
 }
 
 function WorkerMobileView({
@@ -655,38 +1286,40 @@ function SafetyView({
   const [incidents, setIncidents] = useState<IncidentApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  const [dashboardData, setDashboardData] = useState<SafetyDashboardData | null>(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [creating, setCreating] = useState(false);
 
-const [showCreateForm, setShowCreateForm] = useState(false);
-const [creating, setCreating] = useState(false);
-
-const [incidentForm, setIncidentForm] = useState({
-  incidentType: 'NEAR_MISS' as
-    | 'ACCIDENT'
-    | 'HAZARD'
-    | 'NEAR_MISS'
-    | 'UNSAFE_CONDITION'
-    | 'SAFETY_VIOLATION',
-  title: '',
-  description: '',
-  location: '',
-  severity: 'MEDIUM' as
-    | 'LOW'
-    | 'MEDIUM'
-    | 'HIGH'
-    | 'CRITICAL',
-});
+  const [incidentForm, setIncidentForm] = useState({
+    incidentType: 'NEAR_MISS' as
+      | 'ACCIDENT'
+      | 'HAZARD'
+      | 'NEAR_MISS'
+      | 'UNSAFE_CONDITION'
+      | 'SAFETY_VIOLATION',
+    title: '',
+    description: '',
+    location: '',
+    severity: 'MEDIUM' as
+      | 'LOW'
+      | 'MEDIUM'
+      | 'HIGH'
+      | 'CRITICAL',
+  });
+  
   const tabs = ['All', 'Critical', 'Warning', 'Information'];
 
   async function loadIncidents() {
     try {
       setLoading(true);
       setError('');
-
       const data = await getMineIncidents();
       setIncidents(data);
     } catch (err) {
       console.error('Failed to load incidents:', err);
-
       setError(
         err instanceof Error
           ? err.message
@@ -696,155 +1329,127 @@ const [incidentForm, setIncidentForm] = useState({
       setLoading(false);
     }
   }
-  async function handleCreateIncident(
-  event: React.FormEvent<HTMLFormElement>,
-) {
-  event.preventDefault();
 
-  if (!incidentForm.title.trim()) {
-    setError('Incident title is required.');
-    return;
+  async function handleCreateIncident(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!incidentForm.title.trim()) {
+      setError('Incident title is required.');
+      return;
+    }
+
+    if (!incidentForm.description.trim()) {
+      setError('Incident description is required.');
+      return;
+    }
+
+    try {
+      setCreating(true);
+      setError('');
+
+      await createIncident({
+        incidentType: incidentForm.incidentType,
+        title: incidentForm.title.trim(),
+        description: incidentForm.description.trim(),
+        location: incidentForm.location.trim() || undefined,
+        severity: incidentForm.severity,
+      });
+
+      setIncidentForm({
+        incidentType: 'NEAR_MISS',
+        title: '',
+        description: '',
+        location: '',
+        severity: 'MEDIUM',
+      });
+
+      setShowCreateForm(false);
+      await loadIncidents();
+    } catch (err) {
+      console.error('Failed to create incident:', err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to create incident.',
+      );
+    } finally {
+      setCreating(false);
+    }
   }
 
-  if (!incidentForm.description.trim()) {
-    setError('Incident description is required.');
-    return;
-  }
-
-  try {
-    setCreating(true);
-    setError('');
-
-    await createIncident({
-      incidentType: incidentForm.incidentType,
-      title: incidentForm.title.trim(),
-      description: incidentForm.description.trim(),
-      location:
-        incidentForm.location.trim() || undefined,
-      severity: incidentForm.severity,
-    });
-
-    setIncidentForm({
-      incidentType: 'NEAR_MISS',
-      title: '',
-      description: '',
-      location: '',
-      severity: 'MEDIUM',
-    });
-
-    setShowCreateForm(false);
-
-    await loadIncidents();
-  } catch (err) {
-    console.error(
-      'Failed to create incident:',
-      err,
-    );
-
-    setError(
-      err instanceof Error
-        ? err.message
-        : 'Failed to create incident.',
-    );
-  } finally {
-    setCreating(false);
-  }
-}
   useEffect(() => {
     loadIncidents();
   }, []);
 
+  // Step 2 — Dashboard loading effect
+  useEffect(() => {
+    async function loadSafetyDashboard() {
+      try {
+        setDashboardLoading(true);
+        const data = await getSafetyDashboard();
+        setDashboardData(data);
+      } catch (err) {
+        console.error('Failed to load safety dashboard:', err);
+      } finally {
+        setDashboardLoading(false);
+      }
+    }
+
+    loadSafetyDashboard();
+  }, []);
+
   const filtered = useMemo(() => {
-    if (tab === 'All') {
-      return incidents;
-    }
-
+    if (tab === 'All') return incidents;
     if (tab === 'Critical') {
-      return incidents.filter(
-        (incident) => incident.severity === 'CRITICAL',
-      );
+      return incidents.filter((incident) => incident.severity === 'CRITICAL');
     }
-
     if (tab === 'Warning') {
       return incidents.filter(
         (incident) =>
-          incident.severity === 'HIGH' ||
-          incident.severity === 'MEDIUM',
+          incident.severity === 'HIGH' || incident.severity === 'MEDIUM',
       );
     }
-
     if (tab === 'Information') {
-      return incidents.filter(
-        (incident) => incident.severity === 'LOW',
-      );
+      return incidents.filter((incident) => incident.severity === 'LOW');
     }
-
     return incidents;
   }, [incidents, tab]);
 
-  const openIncidents = incidents.filter(
-    (incident) =>
-      incident.status !== 'RESOLVED' &&
-      incident.status !== 'CLOSED',
-  );
-
-  const criticalIncidents = incidents.filter(
-    (incident) =>
-      incident.severity === 'CRITICAL',
-  );
-
   function getTabCount(item: string) {
-    if (item === 'All') {
-      return incidents.length;
-    }
-
+    if (item === 'All') return incidents.length;
     if (item === 'Critical') {
-      return incidents.filter(
-        (incident) =>
-          incident.severity === 'CRITICAL',
-      ).length;
+      return incidents.filter((incident) => incident.severity === 'CRITICAL').length;
     }
-
     if (item === 'Warning') {
       return incidents.filter(
         (incident) =>
-          incident.severity === 'HIGH' ||
-          incident.severity === 'MEDIUM',
+          incident.severity === 'HIGH' || incident.severity === 'MEDIUM',
       ).length;
     }
-
     if (item === 'Information') {
-      return incidents.filter(
-        (incident) =>
-          incident.severity === 'LOW',
-      ).length;
+      return incidents.filter((incident) => incident.severity === 'LOW').length;
     }
-
     return 0;
   }
 
   return (
     <div className="space-y-6">
-
+      
       {/* HEADER */}
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-
         <div>
           <p className="text-xs text-muted-foreground">
             Real-time incident response
           </p>
-
           <h1 className="mt-2 font-display text-2xl font-semibold">
             Safety & alerts
           </h1>
-
           <p className="mt-2 text-sm text-muted-foreground">
             Prioritize what needs attention across the mine.
           </p>
         </div>
 
         <div className="flex gap-2">
-
           <Button
             variant="outline"
             size="sm"
@@ -858,271 +1463,401 @@ const [incidentForm, setIncidentForm] = useState({
                   : 'h-3.5 w-3.5'
               }
             />
-
-            {loading
-              ? 'Refreshing...'
-              : 'Refresh'}
+            {loading ? 'Refreshing...' : 'Refresh'}
           </Button>
 
           <Button
-  size="sm"
-  onClick={() =>
-    setShowCreateForm((value) => !value)
-  }
->
-  <MessageSquareWarning className="h-3.5 w-3.5" />
-
-  {showCreateForm
-    ? 'Close form'
-    : 'Create incident'}
-</Button>
-
-        </div>
-      </div>
-{showCreateForm && (
-  <div className="ops-card p-5">
-
-    <div className="mb-5">
-      <p className="text-xs text-primary">
-        Incident reporting
-      </p>
-
-      <h2 className="mt-1 font-display text-lg font-semibold">
-        Report a new incident
-      </h2>
-
-      <p className="mt-1 text-xs text-muted-foreground">
-        Submit a safety event for this mine.
-      </p>
-    </div>
-
-    <form
-      onSubmit={handleCreateIncident}
-      className="space-y-5"
-    >
-
-      <div className="grid gap-4 md:grid-cols-2">
-
-        <div>
-          <label className="mb-2 block text-xs font-semibold">
-            Incident type
-          </label>
-
-          <select
-            value={incidentForm.incidentType}
-            onChange={(e) =>
-              setIncidentForm((prev) => ({
-                ...prev,
-                incidentType:
-                  e.target.value as typeof prev.incidentType,
-              }))
-            }
-            className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+            size="sm"
+            onClick={() => setShowCreateForm((value) => !value)}
           >
-            <option value="ACCIDENT">Accident</option>
-            <option value="HAZARD">Hazard</option>
-            <option value="NEAR_MISS">Near Miss</option>
-            <option value="UNSAFE_CONDITION">
-              Unsafe Condition
-            </option>
-            <option value="SAFETY_VIOLATION">
-              Safety Violation
-            </option>
-          </select>
+            <MessageSquareWarning className="h-3.5 w-3.5" />
+            {showCreateForm ? 'Close form' : 'Create incident'}
+          </Button>
         </div>
+      </div>
 
-        <div>
-          <label className="mb-2 block text-xs font-semibold">
-            Severity
-          </label>
+      {showCreateForm && (
+        <div className="ops-card p-5">
+          <div className="mb-5">
+            <p className="text-xs text-primary">Incident reporting</p>
+            <h2 className="mt-1 font-display text-lg font-semibold">
+              Report a new incident
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Submit a safety event for this mine.
+            </p>
+          </div>
 
-          <select
-            value={incidentForm.severity}
-            onChange={(e) =>
-              setIncidentForm((prev) => ({
-                ...prev,
-                severity:
-                  e.target.value as typeof prev.severity,
-              }))
-            }
-            className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
-          >
-            <option value="LOW">Low</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="HIGH">High</option>
-            <option value="CRITICAL">Critical</option>
-          </select>
+          <form onSubmit={handleCreateIncident} className="space-y-5">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-xs font-semibold">
+                  Incident type
+                </label>
+                <select
+                  value={incidentForm.incidentType}
+                  onChange={(e) =>
+                    setIncidentForm((prev) => ({
+                      ...prev,
+                      incidentType: e.target.value as typeof prev.incidentType,
+                    }))
+                  }
+                  className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                >
+                  <option value="ACCIDENT">Accident</option>
+                  <option value="HAZARD">Hazard</option>
+                  <option value="NEAR_MISS">Near Miss</option>
+                  <option value="UNSAFE_CONDITION">Unsafe Condition</option>
+                  <option value="SAFETY_VIOLATION">Safety Violation</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold">
+                  Severity
+                </label>
+                <select
+                  value={incidentForm.severity}
+                  onChange={(e) =>
+                    setIncidentForm((prev) => ({
+                      ...prev,
+                      severity: e.target.value as typeof prev.severity,
+                    }))
+                  }
+                  className="flex h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                >
+                  <option value="LOW">Low</option>
+                  <option value="MEDIUM">Medium</option>
+                  <option value="HIGH">High</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="incident-title" className="mb-2 block text-xs font-semibold">
+                Incident title
+              </label>
+              <Input
+                id="incident-title"
+                value={incidentForm.title}
+                onChange={(e) =>
+                  setIncidentForm((prev) => ({
+                    ...prev,
+                    title: e.target.value,
+                  }))
+                }
+                placeholder="Example: Loose rock near conveyor"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="incident-location" className="mb-2 block text-xs font-semibold">
+                Location
+              </label>
+              <Input
+                id="incident-location"
+                value={incidentForm.location}
+                onChange={(e) =>
+                  setIncidentForm((prev) => ({
+                    ...prev,
+                    location: e.target.value,
+                  }))
+                }
+                placeholder="Example: Conveyor Area B"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="incident-description" className="mb-2 block text-xs font-semibold">
+                Description
+              </label>
+              <textarea
+                id="incident-description"
+                value={incidentForm.description}
+                onChange={(e) =>
+                  setIncidentForm((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
+                placeholder="Describe what happened, what was observed, and any immediate risk."
+                className="min-h-[120px] w-full rounded-md border border-border bg-background px-3 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowCreateForm(false)}
+                disabled={creating}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={creating}>
+                {creating ? 'Creating...' : 'Submit incident'}
+              </Button>
+            </div>
+          </form>
         </div>
-
-      </div>
-
-      <div>
-        <label
-          htmlFor="incident-title"
-          className="mb-2 block text-xs font-semibold"
-        >
-          Incident title
-        </label>
-
-        <Input
-          id="incident-title"
-          value={incidentForm.title}
-          onChange={(e) =>
-            setIncidentForm((prev) => ({
-              ...prev,
-              title: e.target.value,
-            }))
-          }
-          placeholder="Example: Loose rock near conveyor"
-        />
-      </div>
-
-      <div>
-        <label
-          htmlFor="incident-location"
-          className="mb-2 block text-xs font-semibold"
-        >
-          Location
-        </label>
-
-        <Input
-          id="incident-location"
-          value={incidentForm.location}
-          onChange={(e) =>
-            setIncidentForm((prev) => ({
-              ...prev,
-              location: e.target.value,
-            }))
-          }
-          placeholder="Example: Conveyor Area B"
-        />
-      </div>
-
-      <div>
-        <label
-          htmlFor="incident-description"
-          className="mb-2 block text-xs font-semibold"
-        >
-          Description
-        </label>
-
-        <textarea
-          id="incident-description"
-          value={incidentForm.description}
-          onChange={(e) =>
-            setIncidentForm((prev) => ({
-              ...prev,
-              description: e.target.value,
-            }))
-          }
-          placeholder="Describe what happened, what was observed, and any immediate risk."
-          className="min-h-[120px] w-full rounded-md border border-border bg-background px-3 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary"
-        />
-      </div>
-
-      <div className="flex justify-end gap-2">
-
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setShowCreateForm(false)}
-          disabled={creating}
-        >
-          Cancel
-        </Button>
-
-        <Button
-          type="submit"
-          disabled={creating}
-        >
-          {creating
-            ? 'Creating...'
-            : 'Submit incident'}
-        </Button>
-
-      </div>
-
-    </form>
-  </div>
-)}
+      )}
 
       {/* ERROR */}
       {error && (
         <div className="rounded-xl border border-safety-danger/30 bg-safety-danger/10 p-4">
           <div className="flex items-start gap-3">
-
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-safety-danger" />
-
             <div>
               <p className="text-sm font-semibold text-safety-danger">
                 Unable to load incidents
               </p>
-
               <p className="mt-1 text-xs text-muted-foreground">
                 {error}
               </p>
             </div>
-
           </div>
         </div>
       )}
 
-
-      {/* SUMMARY */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/* Step 3 — Add the live safety cards */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Open incidents"
+          value={
+            dashboardLoading
+              ? '...'
+              : String(dashboardData?.incidents.open ?? 0)
+          }
+          change={
+            dashboardLoading
+              ? 'Loading'
+              : `${dashboardData?.incidents.critical ?? 0} critical`
+          }
+          trend="down"
+          icon={AlertTriangle}
+          tone="danger"
+        />
 
         <MetricCard
-          label="Open alerts"
-          value={String(openIncidents.length)}
-          change={`${criticalIncidents.length} critical`}
-          trend="down"
-          icon={Bell}
+          label="Critical incidents"
+          value={
+            dashboardLoading
+              ? '...'
+              : String(dashboardData?.incidents.critical ?? 0)
+          }
+          change="Requires attention"
+          trend="flat"
+          icon={ShieldAlert}
           tone="warning"
         />
 
         <MetricCard
-          label="Avg. response time"
-          value="—"
-          change="Live incident tracking"
-          trend="flat"
-          icon={Clock3}
-          tone="success"
+          label="Workers checked in"
+          value={
+            dashboardLoading
+              ? '...'
+              : String(dashboardData?.attendance.checked_in ?? 0)
+          }
+          change={
+            dashboardLoading
+              ? 'Loading'
+              : `${dashboardData?.attendance.late ?? 0} late`
+          }
+          trend="up"
+          icon={Users}
+          tone="info"
         />
 
         <MetricCard
-          label="Safety score"
-          value="—"
-          change="Calculated from safety data"
+          label="Workers needing attention"
+          value={
+            dashboardLoading
+              ? '...'
+              : String(
+                  dashboardData?.workersNeedingAttention?.length ?? 0
+                )
+          }
+          change={
+            dashboardLoading
+              ? 'Loading'
+              : `${dashboardData?.health.unfit ?? 0} unfit`
+          }
           trend="flat"
-          icon={ShieldCheck}
-          tone="success"
+          icon={HeartPulse}
+          tone="warning"
         />
-
       </div>
 
+      {/* Step 4 — Add health status summary */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="ops-card p-5">
+          <PanelTitle
+            icon={HeartPulse}
+            eyebrow="Worker health"
+            title="Medical fitness overview"
+          />
+
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border bg-secondary/40 p-4">
+              <p className="text-[10px] text-muted-foreground">Health records</p>
+              <p className="mt-2 font-display text-2xl font-semibold">
+                {dashboardLoading
+                  ? '...'
+                  : dashboardData?.health.workers_with_health_records ?? 0}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-safety-danger/20 bg-safety-danger/5 p-4">
+              <p className="text-[10px] text-muted-foreground">Unfit</p>
+              <p className="mt-2 font-display text-2xl font-semibold text-safety-danger">
+                {dashboardLoading ? '...' : dashboardData?.health.unfit ?? 0}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-safety-warning/20 bg-safety-warning/5 p-4">
+              <p className="text-[10px] text-muted-foreground">Restricted</p>
+              <p className="mt-2 font-display text-2xl font-semibold text-safety-warning">
+                {dashboardLoading ? '...' : dashboardData?.health.restricted ?? 0}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border bg-secondary/40 p-4">
+              <p className="text-[10px] text-muted-foreground">Fitness expired</p>
+              <p className="mt-2 font-display text-2xl font-semibold">
+                {dashboardLoading ? '...' : dashboardData?.health.expired ?? 0}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="ops-card p-5">
+          <PanelTitle
+            icon={Users}
+            eyebrow="Attendance"
+            title="Today's workforce presence"
+          />
+
+          <div className="mt-5 space-y-5">
+            <div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">Checked in</span>
+                <span className="font-semibold">
+                  {dashboardLoading ? '...' : dashboardData?.attendance.checked_in ?? 0}
+                </span>
+              </div>
+
+              <div className="mt-2 h-2 rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{
+                    width: `${
+                      dashboardData?.health.workers_with_health_records
+                        ? Math.min(
+                            100,
+                            ((dashboardData?.attendance.checked_in ?? 0) /
+                              dashboardData.health.workers_with_health_records) *
+                              100
+                          )
+                        : 0
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-border pt-4 text-xs">
+              <span className="text-muted-foreground">Late attendance</span>
+              <span className="font-semibold text-safety-warning">
+                {dashboardLoading ? '...' : dashboardData?.attendance.late ?? 0}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Step 5 — Show workers needing attention */}
+      <div className="ops-card overflow-hidden">
+        <div className="border-b border-border p-5">
+          <PanelTitle
+            icon={HeartPulse}
+            eyebrow="Action required"
+            title="Workers needing attention"
+          />
+        </div>
+
+        {dashboardLoading ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            Loading worker health records...
+          </div>
+        ) : dashboardData?.workersNeedingAttention.length === 0 ? (
+          <div className="p-8 text-center">
+            <CheckCircle2 className="mx-auto h-7 w-7 text-primary" />
+            <p className="mt-3 text-sm font-semibold">
+              No workers need immediate attention
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              All available worker health records are currently within acceptable status.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border/70">
+            {dashboardData?.workersNeedingAttention.map((worker) => (
+              <div
+                key={worker.worker_id}
+                className="flex items-center gap-4 px-5 py-4"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-secondary font-semibold text-primary">
+                  {worker.name
+                    .split(' ')
+                    .map((name) => name[0])
+                    .join('')
+                    .slice(0, 2)}
+                </span>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{worker.name}</p>
+                  <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                    {worker.employee_code}
+                  </p>
+                </div>
+
+                <Badge
+                  tone={
+                    worker.medical_status === 'UNFIT'
+                      ? 'danger'
+                      : worker.medical_status === 'FIT_WITH_RESTRICTIONS'
+                      ? 'warning'
+                      : 'info'
+                  }
+                >
+                  {worker.medical_status.replace(/_/g, ' ')}
+                </Badge>
+
+                {worker.fitness_expiry_date && (
+                  <span className="hidden text-[10px] text-muted-foreground sm:block">
+                    Expires {new Date(worker.fitness_expiry_date).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* INCIDENT LIST */}
       <div className="ops-card overflow-hidden">
-
         {/* FILTER TABS */}
         <div className="flex flex-wrap items-center gap-1 border-b border-border p-3">
-
           {tabs.map((item) => (
             <Button
               key={item}
-              variant={
-                tab === item
-                  ? 'secondary'
-                  : 'ghost'
-              }
+              variant={tab === item ? 'secondary' : 'ghost'}
               size="sm"
               onClick={() => setTab(item)}
-              className={cx(
-                tab === item && 'text-primary',
-              )}
+              className={cx(tab === item && 'text-primary')}
             >
               {item}
-
               {item !== 'All' && (
                 <span className="ml-1 rounded-full bg-background px-1.5 text-[10px]">
                   {getTabCount(item)}
@@ -1130,77 +1865,53 @@ const [incidentForm, setIncidentForm] = useState({
               )}
             </Button>
           ))}
-
         </div>
-
 
         {/* LOADING */}
         {loading && (
           <div className="p-10 text-center">
-
             <RefreshCw className="mx-auto h-6 w-6 animate-spin text-primary" />
-
             <p className="mt-3 text-sm font-semibold">
               Loading safety incidents
             </p>
-
             <p className="mt-1 text-xs text-muted-foreground">
               Fetching live incident data from MINEXA.
             </p>
-
           </div>
         )}
-
 
         {/* EMPTY */}
         {!loading && filtered.length === 0 && (
           <div className="p-10 text-center">
-
             <ShieldCheck className="mx-auto h-8 w-8 text-primary" />
-
-            <p className="mt-3 text-sm font-semibold">
-              No incidents found
-            </p>
-
+            <p className="mt-3 text-sm font-semibold">No incidents found</p>
             <p className="mt-1 text-xs text-muted-foreground">
               There are no incidents matching the selected filter.
             </p>
-
           </div>
         )}
-
 
         {/* LIVE INCIDENTS */}
         {!loading && filtered.length > 0 && (
           <div className="divide-y divide-border/70">
-
             {filtered.map((incident) => {
+              const isCritical = incident.severity === 'CRITICAL';
+              const isHigh = incident.severity === 'HIGH';
+              const isMedium = incident.severity === 'MEDIUM';
 
-              const isCritical =
-                incident.severity === 'CRITICAL';
-
-              const isHigh =
-                incident.severity === 'HIGH';
-
-              const isMedium =
-                incident.severity === 'MEDIUM';
-
-              const badgeTone:
-                | 'danger'
-                | 'warning'
-                | 'info' =
+              const badgeTone: 'danger' | 'warning' | 'info' =
                 isCritical || isHigh
                   ? 'danger'
                   : isMedium
-                    ? 'warning'
-                    : 'info';
+                  ? 'warning'
+                  : 'info';
 
               const iconBackground =
                 isCritical || isHigh
                   ? 'bg-safety-danger/10 text-safety-danger'
                   : isMedium
-                    ? 'bg-safety-warning/10 text-safety-warning'
-                    : 'bg-secondary text-secondary-foreground';
+                  ? 'bg-safety-warning/10 text-safety-warning'
+                  : 'bg-secondary text-secondary-foreground';
 
               return (
                 <Button
@@ -1209,7 +1920,6 @@ const [incidentForm, setIncidentForm] = useState({
                   className="flex h-auto w-full items-start justify-start gap-4 rounded-none px-5 py-5 text-left hover:bg-secondary/50"
                   onClick={() => onSelect(incident)}
                 >
-
                   {/* ICON */}
                   <span
                     className={cx(
@@ -1220,63 +1930,43 @@ const [incidentForm, setIncidentForm] = useState({
                     <AlertTriangle className="h-4 w-4" />
                   </span>
 
-
                   {/* CONTENT */}
                   <span className="min-w-0 flex-1">
-
                     <span className="flex flex-wrap items-center gap-2">
-
                       <span className="text-sm font-semibold text-foreground">
                         {incident.title}
                       </span>
-
-                      <Badge tone={badgeTone}>
-                        {incident.severity}
-                      </Badge>
-
+                      <Badge tone={badgeTone}>{incident.severity}</Badge>
                       <Badge
                         tone={
                           incident.status === 'CLOSED'
                             ? 'neutral'
                             : incident.status === 'RESOLVED'
-                              ? 'success'
-                              : 'warning'
+                            ? 'success'
+                            : 'warning'
                         }
                       >
-                        {incident.status.replace(
-                          '_',
-                          ' ',
-                        )}
+                        {incident.status.replace(/_/g, ' ')}
                       </Badge>
-
                     </span>
-
 
                     {/* META */}
                     <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-
                       <span className="flex items-center gap-1">
                         <MapPin className="h-3 w-3" />
-                        {incident.location ||
-                          'Location not specified'}
+                        {incident.location || 'Location not specified'}
                       </span>
-
                       <span className="flex items-center gap-1">
                         <Clock3 className="h-3 w-3" />
-                        {new Date(
-                          incident.incident_date,
-                        ).toLocaleString()}
+                        {new Date(incident.incident_date).toLocaleString()}
                       </span>
-
                       <span>
                         Type:{' '}
                         <b className="text-foreground">
-                          {incident.incident_type.replace(/_/g,' ',)}
+                          {incident.incident_type.replace(/_/g, ' ')}
                         </b>
                       </span>
-
                     </span>
-
 
                     {/* DESCRIPTION */}
                     {incident.description && (
@@ -1284,17 +1974,13 @@ const [incidentForm, setIncidentForm] = useState({
                         {incident.description}
                       </span>
                     )}
-
                   </span>
-
 
                   {/* STATUS */}
                   <span className="hidden text-right sm:block">
-
                     <span className="block text-[10px] uppercase tracking-wider text-muted-foreground">
                       Status
                     </span>
-
                     <span
                       className={cx(
                         'mt-1 block text-xs font-semibold',
@@ -1302,24 +1988,1044 @@ const [incidentForm, setIncidentForm] = useState({
                           incident.status === 'CLOSED'
                           ? 'text-safety-success'
                           : incident.severity === 'CRITICAL'
-                            ? 'text-safety-danger'
-                            : 'text-safety-warning',
+                          ? 'text-safety-danger'
+                          : 'text-safety-warning',
                       )}
                     >
-                      {incident.status.replace(
-                        /_/g,
-                        ' ',
-                      )}
+                      {incident.status.replace(/_/g, ' ')}
                     </span>
-
                   </span>
 
-
                   <ChevronRight className="mt-3 h-4 w-4 shrink-0 text-muted-foreground" />
-
                 </Button>
               );
             })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkersView({
+  onSelect,
+}: {
+  onSelect: (worker: WorkerApi) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [workerData, setWorkerData] = useState<WorkerApi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [attendanceData, setAttendanceData] = useState<AttendanceApi[]>([]);
+
+  useEffect(() => {
+    const loadWorkers = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        const [workers, attendance] = await Promise.all([
+  getMineWorkers(),
+  getMineAttendance(),
+]);
+
+setWorkerData(workers);
+setAttendanceData(attendance);
+      } catch (err) {
+        console.error('Failed to load workers:', err);
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to load workers.'
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadWorkers();
+  }, []);
+
+  const filteredWorkers = workerData.filter((worker) =>
+    `${worker.name} ${worker.employee_code} ${worker.department ?? ''} ${worker.designation ?? ''}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  );
+const today = new Date().toISOString().slice(0, 10);
+
+const todayAttendance = attendanceData.filter(
+  (record) =>
+    String(record.attendance_date).slice(0, 10) === today
+);
+
+const workerIdsWithAttendance = new Set(
+  todayAttendance.map((record) => record.worker_id)
+);
+
+const onSiteCount = todayAttendance.filter(
+  (record) =>
+    record.check_in &&
+    !record.check_out
+).length;
+
+const absentCount =
+  workerData.length - workerIdsWithAttendance.size;
+  return (
+    <div className="space-y-6">
+
+      {/* HEADER */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs text-muted-foreground">
+            People & presence
+          </p>
+
+          <h1 className="mt-2 font-display text-2xl font-semibold">
+            Workforce
+          </h1>
+
+          <p className="mt-2 text-sm text-muted-foreground">
+            Know where your teams are and how they’re doing.
+          </p>
+        </div>
+
+        <Button size="sm">
+          <Users className="h-3.5 w-3.5" />
+          Add worker
+        </Button>
+      </div>
+
+      {/* SUMMARY */}
+      <div className="grid gap-4 sm:grid-cols-4">
+
+        <MetricCard
+          label="Total workers"
+          value={loading ? '...' : String(workerData.length)}
+          change="Live workforce"
+          trend="up"
+          icon={Users}
+          tone="info"
+        />
+
+<MetricCard
+  label="On site"
+  value={String(onSiteCount)}
+  change={`${todayAttendance.length} attendance records today`}
+  trend="up"
+  icon={MapPin}
+  tone="success"
+/>
+
+<MetricCard
+  label="Absent"
+  value={String(Math.max(0, absentCount))}
+  change="No attendance record today"
+  trend="flat"
+  icon={Clock3}
+  tone="warning"
+/>
+
+        <MetricCard
+          label="Contractors"
+          value="—"
+          change="Not available in worker API"
+          trend="flat"
+          icon={HardHat}
+          tone="primary"
+        />
+
+      </div>
+
+      {/* WORKER TABLE */}
+      <div className="ops-card overflow-hidden">
+
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+
+          <div className="relative w-full max-w-xs">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+              placeholder="Search workers"
+            />
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm">
+              <Filter className="h-3.5 w-3.5" />
+              Status
+            </Button>
+
+            <Button variant="outline" size="sm">
+              <Download className="h-3.5 w-3.5" />
+              Export
+            </Button>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="p-10 text-center">
+            <RefreshCw className="mx-auto h-6 w-6 animate-spin text-primary" />
+
+            <p className="mt-3 text-sm font-semibold">
+              Loading workers
+            </p>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              Fetching live workforce data from MINEXA.
+            </p>
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="p-10 text-center">
+            <AlertCircle className="mx-auto h-7 w-7 text-safety-danger" />
+
+            <p className="mt-3 text-sm font-semibold">
+              Failed to load workers
+            </p>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              {error}
+            </p>
+          </div>
+        )}
+
+        {!loading && !error && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left">
+
+              <thead className="border-b border-border bg-secondary/40 text-[10px] uppercase tracking-[.14em] text-muted-foreground">
+                <tr>
+                  {[
+                    'Worker',
+                    'Role',
+                    'Department',
+                    'Status',
+                    'Phone',
+                    'Employee code',
+                    '',
+                  ].map((head) => (
+                    <th
+                      key={head}
+                      className="px-5 py-3 font-semibold"
+                    >
+                      {head}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-border/70">
+
+                {filteredWorkers.map((worker) => (
+                  <tr
+                    key={worker.id}
+                    className="transition-colors hover:bg-secondary/30"
+                  >
+
+                    {/* WORKER */}
+                    <td className="px-5 py-4">
+                      <Button
+                        variant="ghost"
+                        className="h-auto justify-start gap-3 p-0 text-left"
+                        onClick={() => onSelect(worker)}
+                      >
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary font-display text-xs font-semibold text-primary">
+                          {worker.name
+                            .split(' ')
+                            .map((name) => name[0])
+                            .join('')
+                            .slice(0, 2)}
+                        </span>
+
+                        <span>
+                          <span className="block text-xs font-semibold text-foreground">
+                            {worker.name}
+                          </span>
+
+                          <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
+                            ID #{worker.id}
+                          </span>
+                        </span>
+                      </Button>
+                    </td>
+
+                    {/* ROLE */}
+                    <td className="px-5 py-4 text-xs text-muted-foreground">
+                      {worker.designation || '—'}
+                    </td>
+
+                    {/* DEPARTMENT */}
+                    <td className="px-5 py-4 text-xs text-muted-foreground">
+                      {worker.department || '—'}
+                    </td>
+
+                    {/* STATUS */}
+                    <td className="px-5 py-4">
+                      <Badge tone="success">
+                        <StatusDot status="success" />
+                        Active
+                      </Badge>
+                    </td>
+
+                    {/* PHONE */}
+                    <td className="px-5 py-4 text-xs text-muted-foreground">
+                      {worker.phone || '—'}
+                    </td>
+
+                    {/* EMPLOYEE CODE */}
+                    <td className="px-5 py-4 font-mono text-xs text-muted-foreground">
+                      {worker.employee_code}
+                    </td>
+
+                    {/* ACTION */}
+                    <td className="px-5 py-4">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => onSelect(worker)}
+                        aria-label={`Open ${worker.name}`}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </td>
+
+                  </tr>
+                ))}
+
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {!loading && !error && filteredWorkers.length === 0 && (
+          <div className="p-10 text-center">
+            <Users className="mx-auto h-8 w-8 text-muted-foreground" />
+
+            <p className="mt-3 text-sm font-semibold">
+              No workers found
+            </p>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              Try a different worker name or employee code.
+            </p>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
+function EquipmentView({ onSelect }: { onSelect: (asset: typeof equipment[number]) => void }) {
+  return <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Assets & maintenance</p><h1 className="mt-2 font-display text-2xl font-semibold">Equipment</h1><p className="mt-2 text-sm text-muted-foreground">Predict maintenance before downtime impacts production.</p></div><Button size="sm"><Wrench className="h-3.5 w-3.5" /> Schedule service</Button></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total equipment" value="92" change="Across 4 zones" trend="flat" icon={Truck} tone="primary" /><MetricCard label="Operational" value="86" change="93.4% uptime" trend="up" icon={CheckCircle2} tone="success" /><MetricCard label="Under maintenance" value="04" change="2 due today" trend="flat" icon={Wrench} tone="warning" /><MetricCard label="Out of service" value="02" change="1 critical" trend="down" icon={AlertCircle} tone="danger" /></div><div className="ops-card overflow-hidden"><div className="flex items-center justify-between border-b border-border p-4"><div className="flex items-center gap-2"><Table2 className="h-4 w-4 text-primary" /><span className="text-sm font-semibold">Asset health register</span></div><Button variant="outline" size="sm"><Download className="h-3.5 w-3.5" /> Export fleet</Button></div><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left"><thead className="border-b border-border bg-secondary/40 text-[10px] uppercase tracking-[.14em] text-muted-foreground"><tr>{['Asset', 'Type', 'Zone', 'Status', 'Health', 'Last maintenance', ''].map((head) => <th key={head} className="px-5 py-3 font-semibold">{head}</th>)}</tr></thead><tbody className="divide-y divide-border/70">{equipment.map((asset) => <tr key={asset.id} className="transition-colors hover:bg-secondary/30"><td className="px-5 py-4"><Button variant="ghost" className="h-auto justify-start gap-3 p-0 text-left" onClick={() => onSelect(asset)}><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-secondary"><Truck className="h-4 w-4" /></span><span><span className="block text-xs font-semibold text-foreground">{asset.name}</span><span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">{asset.id}</span></span></Button></td><td className="px-5 py-4 text-xs text-muted-foreground">{asset.type}</td><td className="px-5 py-4 text-xs text-muted-foreground">{asset.zone}</td><td className="px-5 py-4"><Badge tone={asset.status === 'Operational' ? 'success' : asset.status === 'Maintenance' ? 'warning' : 'danger'}><StatusDot status={asset.status === 'Operational' ? 'success' : asset.status === 'Maintenance' ? 'warning' : 'danger'} /> {asset.status}</Badge></td><td className="px-5 py-4"><div className="flex items-center gap-2"><div className="h-1.5 w-16 rounded-full bg-secondary"><div className={cx('h-full rounded-full', asset.health > 80 ? 'bg-primary' : asset.health > 50 ? 'bg-safety-warning' : 'bg-safety-danger')} style={{ width: `${asset.health}%` }} /></div><span className="text-xs font-semibold">{asset.health}%</span></div></td><td className="px-5 py-4 text-xs text-muted-foreground">{asset.maintenance}</td><td className="px-5 py-4"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onSelect(asset)} aria-label={`Open ${asset.name}`}><MoreHorizontal className="h-4 w-4" /></Button></td></tr>)}</tbody></table></div></div></div>;
+}
+
+function AnalyticsView() {
+  const [data, setData] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const loadAnalytics = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        const result = await getAnalyticsSummary();
+        setData(result);
+      } catch (err) {
+        console.error('Failed to load analytics:', err);
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to load analytics.'
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadAnalytics();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="mx-auto h-7 w-7 animate-spin text-primary" />
+
+          <p className="mt-3 text-sm font-semibold">
+            Loading analytics
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            Fetching live operational data.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="mx-auto h-7 w-7 text-safety-danger" />
+
+          <p className="mt-3 text-sm font-semibold">
+            Failed to load analytics
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            {error || 'No analytics data available.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const chartData = data.trend;
+
+  return (
+    <div className="space-y-6">
+
+      {/* HEADER */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs text-muted-foreground">
+            Operational intelligence
+          </p>
+
+          <h1 className="mt-2 font-display text-2xl font-semibold">
+            Analytics
+          </h1>
+
+          <p className="mt-2 text-sm text-muted-foreground">
+            Live mine performance and safety analytics.
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm">
+            <CalendarDays className="h-3.5 w-3.5" />
+            Last 7 days
+            <ChevronDown className="h-3 w-3" />
+          </Button>
+
+          <Button variant="outline" size="sm">
+            <Filter className="h-3.5 w-3.5" />
+            Pit 04
+          </Button>
+        </div>
+      </div>
+
+      {/* LIVE METRICS */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+
+        <MetricCard
+          label="Incidents"
+          value={String(data.incidents.total)}
+          change={`${data.incidents.open} open`}
+          trend="down"
+          icon={AlertTriangle}
+          tone="danger"
+        />
+
+        <MetricCard
+          label="Critical incidents"
+          value={String(data.incidents.critical)}
+          change="Live incident data"
+          trend="flat"
+          icon={ShieldAlert}
+          tone="warning"
+        />
+
+        <MetricCard
+          label="Equipment uptime"
+          value={`${data.equipment.uptime}%`}
+          change={`${data.equipment.outOfService} out of service`}
+          trend="up"
+          icon={Wrench}
+          tone="primary"
+        />
+
+        <MetricCard
+          label="Workers checked in"
+          value={String(data.attendance.checkedIn)}
+          change={`${data.attendance.late} late`}
+          trend="up"
+          icon={Users}
+          tone="success"
+        />
+
+      </div>
+
+      {/* CHARTS */}
+      <div className="grid gap-6 lg:grid-cols-[1.25fr_.75fr]">
+
+        <div className="ops-card p-5">
+          <PanelTitle
+            icon={Activity}
+            eyebrow="Safety signal"
+            title="Incident trend"
+          />
+
+          <div className="h-[280px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <RechartsLineChart data={chartData}>
+
+                <CartesianGrid
+                  stroke="hsl(var(--border))"
+                  strokeDasharray="3 3"
+                  vertical={false}
+                />
+
+                <XAxis
+                  dataKey="day"
+                  tick={{
+                    fill: 'hsl(var(--muted-foreground))',
+                    fontSize: 10,
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+
+                <YAxis
+                  tick={{
+                    fill: 'hsl(var(--muted-foreground))',
+                    fontSize: 10,
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={24}
+                />
+
+                <Tooltip
+                  contentStyle={{
+                    background:
+                      'hsl(var(--surface))',
+                    border:
+                      '1px solid hsl(var(--border))',
+                    borderRadius: 8,
+                    color:
+                      'hsl(var(--foreground))',
+                    fontSize: 11,
+                  }}
+                />
+
+                <Line
+                  type="monotone"
+                  dataKey="incidents"
+                  name="Incidents"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2.5}
+                  dot={{
+                    fill: 'hsl(var(--primary))',
+                    r: 3,
+                  }}
+                />
+
+                <Line
+                  type="monotone"
+                  dataKey="highRiskIncidents"
+                  name="High risk"
+                  stroke="hsl(var(--danger))"
+                  strokeWidth={2}
+                  dot={{
+                    fill: 'hsl(var(--danger))',
+                    r: 3,
+                  }}
+                />
+
+              </RechartsLineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* EQUIPMENT STATUS */}
+        <div className="ops-card p-5">
+
+          <PanelTitle
+            icon={Wrench}
+            eyebrow="Assets"
+            title="Equipment status"
+          />
+
+          <div className="mt-5 space-y-5">
+
+            <div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">
+                  Operational
+                </span>
+
+                <span className="font-semibold">
+                  {data.equipment.operational}
+                </span>
+              </div>
+
+              <div className="mt-2 h-2 rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{
+                    width: `${data.equipment.total > 0
+                      ? (data.equipment.operational /
+                          data.equipment.total) *
+                        100
+                      : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">
+                  Maintenance
+                </span>
+
+                <span className="font-semibold">
+                  {data.equipment.maintenance}
+                </span>
+              </div>
+
+              <div className="mt-2 h-2 rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-safety-warning"
+                  style={{
+                    width: `${data.equipment.total > 0
+                      ? (data.equipment.maintenance /
+                          data.equipment.total) *
+                        100
+                      : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-muted-foreground">
+                  Out of service
+                </span>
+
+                <span className="font-semibold">
+                  {data.equipment.outOfService}
+                </span>
+              </div>
+
+              <div className="mt-2 h-2 rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-safety-danger"
+                  style={{
+                    width: `${data.equipment.total > 0
+                      ? (data.equipment.outOfService /
+                          data.equipment.total) *
+                        100
+                      : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function ReportsView() {
+  const { toast } = useToast();
+
+  const [data, setData] = useState<ReportsSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const loadReports = async () => {
+      try {
+        setLoading(true);
+        setError('');
+
+        const result = await getReportsSummary();
+        setData(result);
+      } catch (err) {
+        console.error('Failed to load reports:', err);
+
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to load reports.'
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadReports();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="text-center">
+          <RefreshCw className="mx-auto h-7 w-7 animate-spin text-primary" />
+
+          <p className="mt-3 text-sm font-semibold">
+            Loading reports
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            Fetching live operational records.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex min-h-[400px] items-center justify-center">
+        <div className="text-center">
+          <AlertCircle className="mx-auto h-7 w-7 text-safety-danger" />
+
+          <p className="mt-3 text-sm font-semibold">
+            Failed to load reports
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            {error || 'No report data available.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const {
+    totalIncidents,
+    closedIncidents,
+    highPriority,
+    totalEquipment,
+    operationalEquipment,
+    outOfService,
+    attendanceRecords,
+    lateRecords,
+  } = data.summary;
+
+  const incidentClosureRate =
+    totalIncidents > 0
+      ? Math.round(
+          (closedIncidents / totalIncidents) * 100
+        )
+      : 0;
+
+  const equipmentCoverage =
+    totalEquipment > 0
+      ? Math.round(
+          (operationalEquipment / totalEquipment) * 100
+        )
+      : 0;
+
+  return (
+    <div className="space-y-6">
+
+      {/* HEADER */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-xs text-muted-foreground">
+            Evidence & accountability
+          </p>
+
+          <h1 className="mt-2 font-display text-2xl font-semibold">
+            Reports
+          </h1>
+
+          <p className="mt-2 text-sm text-muted-foreground">
+            Generate a clear record of live operational activity.
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              toast({
+                title: 'Schedule report',
+                description:
+                  'Report scheduling will be connected next.',
+              })
+            }
+          >
+            <CalendarDays className="h-3.5 w-3.5" />
+            Schedule
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() =>
+              toast({
+                title: 'Report builder',
+                description:
+                  'Choose a report type to generate from live data.',
+              })
+            }
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Generate report
+          </Button>
+        </div>
+      </div>
+
+      {/* LIVE SUMMARY */}
+      <div className="grid gap-4 sm:grid-cols-3">
+
+        <MetricCard
+          label="Total incidents"
+          value={String(totalIncidents)}
+          change={`${highPriority} high priority`}
+          trend="down"
+          icon={AlertTriangle}
+          tone="danger"
+        />
+
+        <MetricCard
+          label="Incident closure"
+          value={`${incidentClosureRate}%`}
+          change={`${closedIncidents} closed`}
+          trend="up"
+          icon={CheckCircle2}
+          tone="success"
+        />
+
+        <MetricCard
+          label="Equipment coverage"
+          value={`${equipmentCoverage}%`}
+          change={`${outOfService} out of service`}
+          trend="up"
+          icon={Wrench}
+          tone="primary"
+        />
+
+      </div>
+
+      {/* OPERATIONAL SNAPSHOT */}
+      <div className="grid gap-6 lg:grid-cols-2">
+
+        <div className="ops-card p-5">
+          <PanelTitle
+            icon={Activity}
+            eyebrow="Operational snapshot"
+            title="Current mine status"
+          />
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+
+            <div className="rounded-lg border border-border bg-secondary/40 p-4">
+              <p className="text-[10px] text-muted-foreground">
+                Operational equipment
+              </p>
+
+              <p className="mt-2 font-display text-2xl font-semibold">
+                {operationalEquipment}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border bg-secondary/40 p-4">
+              <p className="text-[10px] text-muted-foreground">
+                Out of service
+              </p>
+
+              <p className="mt-2 font-display text-2xl font-semibold text-safety-danger">
+                {outOfService}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border bg-secondary/40 p-4">
+              <p className="text-[10px] text-muted-foreground">
+                Attendance records · 7 days
+              </p>
+
+              <p className="mt-2 font-display text-2xl font-semibold">
+                {attendanceRecords}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-border bg-secondary/40 p-4">
+              <p className="text-[10px] text-muted-foreground">
+                Late attendance
+              </p>
+
+              <p className="mt-2 font-display text-2xl font-semibold text-safety-warning">
+                {lateRecords}
+              </p>
+            </div>
+
+          </div>
+        </div>
+
+        <div className="ops-card p-5">
+          <PanelTitle
+            icon={ShieldCheck}
+            eyebrow="Compliance"
+            title="Incident compliance"
+          />
+
+          <div className="mt-5">
+
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                Incidents closed
+              </span>
+
+              <span className="font-semibold">
+                {closedIncidents} / {totalIncidents}
+              </span>
+            </div>
+
+            <div className="mt-2 h-2 rounded-full bg-secondary">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{
+                  width: `${incidentClosureRate}%`,
+                }}
+              />
+            </div>
+
+            <div className="mt-6 flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                High priority incidents
+              </span>
+
+              <span className="font-semibold text-safety-danger">
+                {highPriority}
+              </span>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                Equipment available/active
+              </span>
+
+              <span className="font-semibold">
+                {operationalEquipment}
+              </span>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+      {/* RECENT INCIDENT REPORTS */}
+      <div className="ops-card overflow-hidden">
+
+        <div className="flex items-center justify-between border-b border-border p-4">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-primary" />
+
+            <span className="text-sm font-semibold">
+              Recent incident records
+            </span>
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              toast({
+                title: 'Export started',
+                description:
+                  'Live incident records are being prepared.',
+              })
+            }
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export
+          </Button>
+        </div>
+
+        {data.recentIncidents.length === 0 ? (
+          <div className="p-10 text-center">
+            <FileText className="mx-auto h-8 w-8 text-muted-foreground" />
+
+            <p className="mt-3 text-sm font-semibold">
+              No incident records
+            </p>
+
+            <p className="mt-1 text-xs text-muted-foreground">
+              There are no incidents available for this mine.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border/70">
+
+            {data.recentIncidents.map((incident) => (
+
+              <div
+                key={incident.id}
+                className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
+              >
+
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-primary">
+                  <FileText className="h-4 w-4" />
+                </span>
+
+                <div className="min-w-0 flex-1">
+
+                  <p className="text-sm font-semibold">
+                    {incident.title}
+                  </p>
+
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {incident.incident_type.replace(/_/g, ' ')}
+                    {' · '}
+                    {incident.location || 'Unknown location'}
+                    {' · '}
+                    {new Date(
+                      incident.incident_date
+                    ).toLocaleString()}
+                  </p>
+
+                </div>
+
+                <Badge
+                  tone={
+                    incident.severity === 'CRITICAL' ||
+                    incident.severity === 'HIGH'
+                      ? 'danger'
+                      : incident.severity === 'MEDIUM'
+                      ? 'warning'
+                      : 'info'
+                  }
+                >
+                  {incident.severity}
+                </Badge>
+
+                <Badge
+                  tone={
+                    incident.status === 'CLOSED'
+                      ? 'success'
+                      : incident.status === 'RESOLVED'
+                      ? 'info'
+                      : 'warning'
+                  }
+                >
+                  {incident.status.replace(/_/g, ' ')}
+                </Badge>
+
+              </div>
+
+            ))}
 
           </div>
         )}
@@ -1328,24 +3034,6 @@ const [incidentForm, setIncidentForm] = useState({
 
     </div>
   );
-}
-
-function WorkersView({ onSelect }: { onSelect: (worker: typeof workers[number]) => void }) {
-  const [search, setSearch] = useState(''); const filtered = workers.filter((worker) => `${worker.name} ${worker.id} ${worker.zone}`.toLowerCase().includes(search.toLowerCase()));
-  return <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">People & presence</p><h1 className="mt-2 font-display text-2xl font-semibold">Workforce</h1><p className="mt-2 text-sm text-muted-foreground">Know where your teams are and how they’re doing.</p></div><Button size="sm"><Users className="h-3.5 w-3.5" /> Add worker</Button></div><div className="grid gap-4 sm:grid-cols-4"><MetricCard label="Total workers" value="1,486" change="+42 this month" trend="up" icon={Users} tone="info" /><MetricCard label="On site" value="1,248" change="83.9%" trend="up" icon={MapPin} tone="success" /><MetricCard label="Absent" value="238" change="On schedule" trend="flat" icon={Clock3} tone="warning" /><MetricCard label="Contractors" value="164" change="12 active zones" trend="flat" icon={HardHat} tone="primary" /></div><div className="ops-card overflow-hidden"><div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between"><div className="relative w-full max-w-xs"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" placeholder="Search workers or zones" /></div><div className="flex gap-2"><Button variant="outline" size="sm"><Filter className="h-3.5 w-3.5" /> Status</Button><Button variant="outline" size="sm"><Download className="h-3.5 w-3.5" /> Export</Button></div></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead className="border-b border-border bg-secondary/40 text-[10px] uppercase tracking-[.14em] text-muted-foreground"><tr>{['Worker', 'Role', 'Zone', 'Status', 'Last seen', 'Safety score', ''].map((head) => <th key={head} className="px-5 py-3 font-semibold">{head}</th>)}</tr></thead><tbody className="divide-y divide-border/70">{filtered.map((worker) => <tr key={worker.id} className="transition-colors hover:bg-secondary/30"><td className="px-5 py-4"><Button variant="ghost" className="h-auto justify-start gap-3 p-0 text-left" onClick={() => onSelect(worker)}><span className="flex h-8 w-8 items-center justify-center rounded-full bg-secondary font-display text-xs font-semibold text-primary">{worker.name.split(' ').map((n) => n[0]).join('')}</span><span><span className="block text-xs font-semibold text-foreground">{worker.name}</span><span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">{worker.id}</span></span></Button></td><td className="px-5 py-4 text-xs text-muted-foreground">{worker.role}</td><td className="px-5 py-4 text-xs text-muted-foreground">{worker.zone}</td><td className="px-5 py-4"><Badge tone={worker.status === 'On site' ? 'success' : 'warning'}><StatusDot status={worker.status === 'On site' ? 'success' : 'warning'} /> {worker.status}</Badge></td><td className="px-5 py-4 text-xs text-muted-foreground">{worker.lastSeen}</td><td className="px-5 py-4"><span className={cx('font-display text-sm font-semibold', worker.score > 90 ? 'text-primary' : 'text-safety-warning')}>{worker.score}</span><span className="text-xs text-muted-foreground">/100</span></td><td className="px-5 py-4"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onSelect(worker)} aria-label={`Open ${worker.name}`}><MoreHorizontal className="h-4 w-4" /></Button></td></tr>)}</tbody></table></div></div></div>;
-}
-
-function EquipmentView({ onSelect }: { onSelect: (asset: typeof equipment[number]) => void }) {
-  return <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Assets & maintenance</p><h1 className="mt-2 font-display text-2xl font-semibold">Equipment</h1><p className="mt-2 text-sm text-muted-foreground">Predict maintenance before downtime impacts production.</p></div><Button size="sm"><Wrench className="h-3.5 w-3.5" /> Schedule service</Button></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Total equipment" value="92" change="Across 4 zones" trend="flat" icon={Truck} tone="primary" /><MetricCard label="Operational" value="86" change="93.4% uptime" trend="up" icon={CheckCircle2} tone="success" /><MetricCard label="Under maintenance" value="04" change="2 due today" trend="flat" icon={Wrench} tone="warning" /><MetricCard label="Out of service" value="02" change="1 critical" trend="down" icon={AlertCircle} tone="danger" /></div><div className="ops-card overflow-hidden"><div className="flex items-center justify-between border-b border-border p-4"><div className="flex items-center gap-2"><Table2 className="h-4 w-4 text-primary" /><span className="text-sm font-semibold">Asset health register</span></div><Button variant="outline" size="sm"><Download className="h-3.5 w-3.5" /> Export fleet</Button></div><div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left"><thead className="border-b border-border bg-secondary/40 text-[10px] uppercase tracking-[.14em] text-muted-foreground"><tr>{['Asset', 'Type', 'Zone', 'Status', 'Health', 'Last maintenance', ''].map((head) => <th key={head} className="px-5 py-3 font-semibold">{head}</th>)}</tr></thead><tbody className="divide-y divide-border/70">{equipment.map((asset) => <tr key={asset.id} className="transition-colors hover:bg-secondary/30"><td className="px-5 py-4"><Button variant="ghost" className="h-auto justify-start gap-3 p-0 text-left" onClick={() => onSelect(asset)}><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary text-secondary"><Truck className="h-4 w-4" /></span><span><span className="block text-xs font-semibold text-foreground">{asset.name}</span><span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">{asset.id}</span></span></Button></td><td className="px-5 py-4 text-xs text-muted-foreground">{asset.type}</td><td className="px-5 py-4 text-xs text-muted-foreground">{asset.zone}</td><td className="px-5 py-4"><Badge tone={asset.status === 'Operational' ? 'success' : asset.status === 'Maintenance' ? 'warning' : 'danger'}><StatusDot status={asset.status === 'Operational' ? 'success' : asset.status === 'Maintenance' ? 'warning' : 'danger'} /> {asset.status}</Badge></td><td className="px-5 py-4"><div className="flex items-center gap-2"><div className="h-1.5 w-16 rounded-full bg-secondary"><div className={cx('h-full rounded-full', asset.health > 80 ? 'bg-primary' : asset.health > 50 ? 'bg-safety-warning' : 'bg-safety-danger')} style={{ width: `${asset.health}%` }} /></div><span className="text-xs font-semibold">{asset.health}%</span></div></td><td className="px-5 py-4 text-xs text-muted-foreground">{asset.maintenance}</td><td className="px-5 py-4"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onSelect(asset)} aria-label={`Open ${asset.name}`}><MoreHorizontal className="h-4 w-4" /></Button></td></tr>)}</tbody></table></div></div></div>;
-}
-
-function AnalyticsView() {
-  return <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Operational intelligence</p><h1 className="mt-2 font-display text-2xl font-semibold">Analytics</h1><p className="mt-2 text-sm text-muted-foreground">Find the patterns behind safer, more productive shifts.</p></div><div className="flex gap-2"><Button variant="outline" size="sm"><CalendarDays className="h-3.5 w-3.5" /> Last 7 days <ChevronDown className="h-3 w-3" /></Button><Button variant="outline" size="sm"><Filter className="h-3.5 w-3.5" /> Pit 04</Button></div></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="Incidents" value="09" change="-28% vs prior" trend="up" icon={AlertTriangle} tone="danger" /><MetricCard label="Avg. risk score" value="24.8" change="-18% vs prior" trend="up" icon={Activity} tone="warning" /><MetricCard label="Equipment downtime" value="2.6%" change="-0.8% vs prior" trend="up" icon={Wrench} tone="primary" /><MetricCard label="Productivity" value="84.2%" change="+6.8% vs prior" trend="up" icon={Target} tone="success" /></div><div className="grid gap-6 lg:grid-cols-[1.25fr_.75fr]"><div className="ops-card p-5"><PanelTitle icon={Activity} eyebrow="Safety signal" title="Risk score trend" /><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><RechartsLineChart data={trendData}><CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} axisLine={false} tickLine={false} width={24} /><Tooltip contentStyle={{ background: 'hsl(var(--surface))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))', fontSize: 11 }} /><Line type="monotone" dataKey="risk" name="Risk score" stroke="hsl(var(--primary))" strokeWidth={2.5} dot={{ fill: 'hsl(var(--primary))', r: 3 }} /><Line type="monotone" dataKey="incidents" name="Incidents" stroke="hsl(var(--danger))" strokeWidth={2} dot={{ fill: 'hsl(var(--danger))', r: 3 }} /></RechartsLineChart></ResponsiveContainer></div></div><div className="ops-card p-5"><PanelTitle icon={Zap} eyebrow="Output" title="Productivity by zone" /><div className="h-[280px]"><ResponsiveContainer width="100%" height="100%"><BarChart data={[{ zone: 'A', value: 88 }, { zone: 'B', value: 76 }, { zone: 'C', value: 91 }, { zone: 'D', value: 68 }]}><CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="zone" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }} axisLine={false} tickLine={false} width={24} /><Tooltip contentStyle={{ background: 'hsl(var(--surface))', border: '1px solid hsl(var(--border))', borderRadius: 8, color: 'hsl(var(--foreground))', fontSize: 11 }} /><Bar dataKey="value" fill="hsl(var(--secondary))" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div></div></div></div>;
-}
-
-function ReportsView() {
-  const { toast } = useToast(); const reports = [['Daily operations brief', 'Daily operations', '12 Jun 2025', 'Ready'], ['Safety summary · Pit 04', 'Safety summary', '11 Jun 2025', 'Ready'], ['Incident response · INC-204', 'Incident report', '11 Jun 2025', 'Processing'], ['Fleet health digest', 'Equipment health', '10 Jun 2025', 'Ready'], ['Productivity by zone', 'Productivity', '09 Jun 2025', 'Ready']];
-  return <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Evidence & accountability</p><h1 className="mt-2 font-display text-2xl font-semibold">Reports</h1><p className="mt-2 text-sm text-muted-foreground">Generate a clear record of every operational decision.</p></div><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => toast({ title: 'Schedule report', description: 'Report scheduling preferences opened.' })}><CalendarDays className="h-3.5 w-3.5" /> Schedule</Button><Button size="sm" onClick={() => toast({ title: 'Report builder opened', description: 'Choose a report type to get started.' })}><FileText className="h-3.5 w-3.5" /> Generate report</Button></div></div><div className="grid gap-4 sm:grid-cols-3"><MetricCard label="Generated this month" value="128" change="+18%" trend="up" icon={FileBarChart} tone="primary" /><MetricCard label="Scheduled reports" value="08" change="Next at 06:00" trend="flat" icon={CalendarDays} tone="info" /><MetricCard label="Compliance coverage" value="100%" change="All zones" trend="up" icon={ShieldCheck} tone="success" /></div><div className="ops-card overflow-hidden"><div className="flex items-center justify-between border-b border-border p-4"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><span className="text-sm font-semibold">Report library</span></div><div className="flex gap-2"><Button variant="outline" size="sm"><Download className="h-3.5 w-3.5" /> Export CSV</Button><Button variant="outline" size="sm"><Filter className="h-3.5 w-3.5" /> Filter</Button></div></div><div className="divide-y divide-border/70">{reports.map(([name, type, date, status]) => <div key={name} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-secondary text-primary"><FileText className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="text-sm font-semibold">{name}</p><p className="mt-1 text-[11px] text-muted-foreground">{type} · {date} · Generated by NEONOVA</p></div><Badge tone={status === 'Ready' ? 'success' : 'warning'}><StatusDot status={status === 'Ready' ? 'success' : 'warning'} /> {status}</Badge><Button variant="outline" size="sm" disabled={status !== 'Ready'} onClick={() => toast({ title: 'Download started', description: `${name} is being prepared as a PDF.` })}><Download className="h-3.5 w-3.5" /> PDF</Button></div>)}</div></div></div>;
 }
 
 function AdminView() {
@@ -1364,7 +3052,7 @@ function DetailDrawer({
     | IncidentApi
     | typeof alerts[number]
     | null;
-  worker: typeof workers[number] | null;
+  worker: WorkerApi | null;
   asset: typeof equipment[number] | null;
   onClose: () => void;
   onNavigate: (view: View) => void;
@@ -1640,86 +3328,118 @@ function DetailDrawer({
 
 
         {/* WORKER */}
-        {worker && (
-          <div className="space-y-5 pt-5">
+       {worker && (
+  <div className="space-y-5 pt-5">
 
-            <div className="flex items-center gap-4">
+    <div className="flex items-center gap-4">
+      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary font-display text-lg font-semibold text-primary">
+        {worker.name
+          .split(' ')
+          .map((name) => name[0])
+          .join('')
+          .slice(0, 2)}
+      </span>
 
-              <span className="flex h-14 w-14 items-center justify-center rounded-full bg-secondary font-display text-lg font-semibold text-primary">
-                {worker.name
-                  .split(' ')
-                  .map((n) => n[0])
-                  .join('')}
-              </span>
+      <div>
+        <p className="text-sm font-semibold">
+          {worker.name}
+        </p>
 
-              <div>
-                <p className="text-sm font-semibold">
-                  {worker.role}
-                </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {worker.designation || 'Field Worker'}
+        </p>
 
-                <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-                  {worker.id} · {worker.shift}
-                </p>
+        <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+          {worker.employee_code}
+        </p>
+      </div>
+    </div>
 
-                <div className="mt-2">
-                  <Badge
-                    tone={
-                      worker.status === 'On site'
-                        ? 'success'
-                        : 'warning'
-                    }
-                  >
-                    <StatusDot
-                      status={
-                        worker.status === 'On site'
-                          ? 'success'
-                          : 'warning'
-                      }
-                    />
+    <div className="grid grid-cols-2 gap-3">
 
-                    {worker.status}
-                  </Badge>
-                </div>
-              </div>
+      <div className="rounded-lg border border-border bg-secondary/50 p-3">
+        <p className="text-[10px] text-muted-foreground">
+          Department
+        </p>
 
-            </div>
+        <p className="mt-2 text-sm font-semibold">
+          {worker.department || '—'}
+        </p>
+      </div>
 
+      <div className="rounded-lg border border-border bg-secondary/50 p-3">
+        <p className="text-[10px] text-muted-foreground">
+          Mine
+        </p>
 
-            <div className="grid grid-cols-2 gap-3">
+        <p className="mt-2 text-sm font-semibold">
+          {worker.mine_name || '—'}
+        </p>
+      </div>
 
-              <div className="rounded-lg border border-border bg-secondary/50 p-3">
-                <p className="text-[10px] text-muted-foreground">
-                  Current zone
-                </p>
+    </div>
 
-                <p className="mt-2 text-sm font-semibold">
-                  {worker.zone}
-                </p>
-              </div>
+    <div className="rounded-lg border border-border p-4">
 
-              <div className="rounded-lg border border-border bg-secondary/50 p-3">
-                <p className="text-[10px] text-muted-foreground">
-                  Safety score
-                </p>
+      <p className="text-xs font-semibold">
+        Worker information
+      </p>
 
-                <p className="mt-2 font-display text-lg font-semibold text-primary">
-                  {worker.score}/100
-                </p>
-              </div>
+      <div className="mt-4 space-y-3 text-xs">
 
-            </div>
+        <div className="flex items-center justify-between border-b border-border/60 pb-3">
+          <span className="text-muted-foreground">
+            Phone
+          </span>
 
+          <span className="font-medium">
+            {worker.phone || '—'}
+          </span>
+        </div>
 
-            <Button
-              className="w-full"
-              onClick={() => onNavigate('safety')}
-            >
-              <ShieldCheck className="h-4 w-4" />
-              View safety history
-            </Button>
+        <div className="flex items-center justify-between border-b border-border/60 pb-3">
+          <span className="text-muted-foreground">
+            Employee code
+          </span>
 
-          </div>
-        )}
+          <span className="font-mono font-medium">
+            {worker.employee_code}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between border-b border-border/60 pb-3">
+          <span className="text-muted-foreground">
+            Department
+          </span>
+
+          <span className="font-medium">
+            {worker.department || '—'}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">
+            Designation
+          </span>
+
+          <span className="font-medium">
+            {worker.designation || '—'}
+          </span>
+        </div>
+
+      </div>
+    </div>
+
+    <Button
+      className="w-full"
+      onClick={() => onNavigate('safety')}
+    >
+      <ShieldCheck className="h-4 w-4" />
+      View safety history
+    </Button>
+
+  </div>
+)}
 
 
         {/* EQUIPMENT */}
@@ -2521,13 +4241,58 @@ function AppShell({
   user: AuthUser | null;
   onLogout: () => void;
 }) {
-  const [activeView, setActiveView] = useState<View>(roleMeta[role].defaultView); const [sidebarOpen, setSidebarOpen] = useState(false); const [notifications, setNotifications] = useState(false);const [selectedAlert, setSelectedAlert] = useState<IncidentApi | typeof alerts[number] | null>(null); const [selectedWorker, setSelectedWorker] = useState<typeof workers[number] | null>(null); const [selectedAsset, setSelectedAsset] = useState<typeof equipment[number] | null>(null); const [search, setSearch] = useState(''); const { toast } = useToast(); const meta = roleMeta[role]; const RoleIcon = meta.icon;
+  const [activeView, setActiveView] = useState<View>(roleMeta[role].defaultView); const [sidebarOpen, setSidebarOpen] = useState(false); const [notifications, setNotifications] = useState(false);const [liveNotifications, setLiveNotifications] = useState<IncidentApi[]>([]);
+  const [liveAlertCount, setLiveAlertCount] = useState(0);
+  const [selectedAlert, setSelectedAlert] = useState<IncidentApi | typeof alerts[number] | null>(null); 
+const [selectedWorker, setSelectedWorker] = useState<WorkerApi | null>(null); const [selectedAsset, setSelectedAsset] = useState<typeof equipment[number] | null>(null);
+  const [search, setSearch] = useState(''); const { toast } = useToast(); const meta = roleMeta[role]; const RoleIcon = meta.icon;
+  useEffect(() => {
+  if (role !== 'manager' && role !== 'safety') {
+    return;
+  }
+
+  const loadNotifications = async () => {
+    try {
+      const incidents = await getMineIncidents();
+
+      const activeIncidents = incidents.filter(
+        (incident) =>
+          incident.status === 'OPEN' ||
+          incident.status === 'UNDER_INVESTIGATION'
+      );
+
+      const sorted = [...incidents]
+        .sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() -
+            new Date(a.created_at).getTime()
+        )
+        .slice(0, 3);
+
+      setLiveAlertCount(activeIncidents.length);
+      setLiveNotifications(sorted);
+    } catch (error) {
+      console.error(
+        'Failed to load notification incidents:',
+        error
+      );
+    }
+  };
+
+  loadNotifications();
+}, [role]);
   const filteredNav = useMemo(() => navItems.filter((item) => roleAccess[role].includes(item.id)), [role]);
   const selectView = (view: View) => { if (!roleAccess[role].includes(view)) { toast({ title: 'Access restricted', description: `This workspace is not available to the ${meta.label.toLowerCase()} role.`, variant: 'destructive' }); return; } setActiveView(view); setSidebarOpen(false); };
   const pageTitle = navItems.find((item) => item.id === activeView)?.label ?? 'Command center';
-  return <div className="min-h-screen bg-background text-foreground"><div className={cx('fixed inset-0 z-40 bg-background/60 backdrop-blur-sm transition-opacity lg:hidden', sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0')} onClick={() => setSidebarOpen(false)} /><aside className={cx('fixed inset-y-0 left-0 z-50 flex w-[268px] flex-col border-r border-border bg-surface transition-transform lg:translate-x-0', sidebarOpen ? 'translate-x-0' : '-translate-x-full')}><div className="flex h-[76px] items-center border-b border-border px-5"><LogoMark /></div><div className="flex-1 overflow-y-auto px-3 py-5"><p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Navigation</p><nav className="space-y-1">{filteredNav.map((item, index) => { const Icon = item.icon; return <React.Fragment key={item.id}>{item.section && index !== 0 && <p className="mb-3 mt-7 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">{item.section}</p>}<Button variant={activeView === item.id ? 'secondary' : 'ghost'} onClick={() => selectView(item.id)} className={cx('w-full justify-start gap-3 px-3 text-xs', activeView === item.id && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary')}><Icon className="h-4 w-4" />{item.label}{item.id === 'safety' && <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-safety-danger/15 px-1.5 text-[10px] font-bold text-safety-danger">4</span>}</Button></React.Fragment>})}</nav></div><div className="border-t border-border p-3"><Button variant="ghost" className="w-full justify-start gap-3 px-3 text-xs" onClick={() => selectView('settings')}><Settings className="h-4 w-4" /> Workspace settings</Button><div className="mt-2 flex items-center gap-3 rounded-lg bg-secondary/60 p-3"><span className={cx('flex h-8 w-8 items-center justify-center rounded-full bg-background', meta.color)}><RoleIcon className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{user?.name ?? 'Worker'}</p><p className="truncate text-[10px] text-muted-foreground">{meta.label}</p></div><Button variant="ghost" size="icon" className="h-7 w-7" onClick={onLogout} aria-label="Log out"><LogOut className="h-3.5 w-3.5" /></Button></div></div></aside><div className="lg:pl-[268px]"><header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu className="h-5 w-5" /></Button><div className="hidden sm:block"><p className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Workspace / <span className="text-foreground">{pageTitle}</span></p><div className="mt-1 flex items-center gap-2 text-xs font-semibold"><span className="h-1.5 w-1.5 rounded-full bg-primary" /> Pit 04 · Jharkhand Operations</div></div><div className="sm:hidden"><LogoMark /></div></div><div className="flex items-center gap-2"><div className="relative hidden w-56 md:block"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search workspace" className="h-9 pl-9 text-xs" /></div><Button variant="ghost" size="icon" className="relative" onClick={() => setNotifications(!notifications)} aria-label="Notifications"><Bell className="h-[18px] w-[18px]" /><span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-safety-danger" /></Button><Button variant="outline" size="sm" className="hidden gap-2 sm:inline-flex"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">HK</span><ChevronDown className="h-3 w-3" /></Button></div></header><main className="mx-auto max-w-[1540px] px-4 py-6 sm:px-6 lg:px-8">{activeView === 'dashboard' && <DashboardView role={role}   user={user}
+  return <div className="min-h-screen bg-background text-foreground"><div className={cx('fixed inset-0 z-40 bg-background/60 backdrop-blur-sm transition-opacity lg:hidden', sidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0')} onClick={() => setSidebarOpen(false)} /><aside className={cx('fixed inset-y-0 left-0 z-50 flex w-[268px] flex-col border-r border-border bg-surface transition-transform lg:translate-x-0', sidebarOpen ? 'translate-x-0' : '-translate-x-full')}><div className="flex h-[76px] items-center border-b border-border px-5"><LogoMark /></div><div className="flex-1 overflow-y-auto px-3 py-5"><p className="mb-3 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">Navigation</p><nav className="space-y-1">{filteredNav.map((item, index) => { const Icon = item.icon; return <React.Fragment key={item.id}>{item.section && index !== 0 && <p className="mb-3 mt-7 px-3 text-[10px] font-bold uppercase tracking-[.18em] text-muted-foreground">{item.section}</p>}<Button variant={activeView === item.id ? 'secondary' : 'ghost'} onClick={() => selectView(item.id)} className={cx('w-full justify-start gap-3 px-3 text-xs', activeView === item.id && 'bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary')}><Icon className="h-4 w-4" />{item.label}{item.id === 'safety' && <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-safety-danger/15 px-1.5 text-[10px] font-bold text-safety-danger">{liveAlertCount}</span>}</Button></React.Fragment>})}</nav></div><div className="border-t border-border p-3"><Button variant="ghost" className="w-full justify-start gap-3 px-3 text-xs" onClick={() => selectView('settings')}><Settings className="h-4 w-4" /> Workspace settings</Button><div className="mt-2 flex items-center gap-3 rounded-lg bg-secondary/60 p-3"><span className={cx('flex h-8 w-8 items-center justify-center rounded-full bg-background', meta.color)}><RoleIcon className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{user?.name ?? 'Worker'}</p><p className="truncate text-[10px] text-muted-foreground">{meta.label}</p></div><Button variant="ghost" size="icon" className="h-7 w-7" onClick={onLogout} aria-label="Log out"><LogOut className="h-3.5 w-3.5" /></Button></div></div></aside><div className="lg:pl-[268px]"><header className="sticky top-0 z-30 flex h-[76px] items-center justify-between border-b border-border bg-background/90 px-4 backdrop-blur-xl sm:px-6 lg:px-8"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)} aria-label="Open navigation"><Menu className="h-5 w-5" /></Button><div className="hidden sm:block"><p className="text-[10px] uppercase tracking-[.16em] text-muted-foreground">Workspace / <span className="text-foreground">{pageTitle}</span></p><div className="mt-1 flex items-center gap-2 text-xs font-semibold"><span className="h-1.5 w-1.5 rounded-full bg-primary" /> Pit 04 · Jharkhand Operations</div></div><div className="sm:hidden"><LogoMark /></div></div><div className="flex items-center gap-2"><div className="relative hidden w-56 md:block"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search workspace" className="h-9 pl-9 text-xs" /></div><Button variant="ghost" size="icon" className="relative" onClick={() => setNotifications(!notifications)} aria-label="Notifications"><Bell className="h-[18px] w-[18px]" /><span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-safety-danger" /></Button><Button variant="outline" size="sm" className="hidden gap-2 sm:inline-flex"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">HK</span><ChevronDown className="h-3 w-3" /></Button></div></header><main className="mx-auto max-w-[1540px] px-4 py-6 sm:px-6 lg:px-8">{activeView === 'dashboard' && <DashboardView role={role}   user={user}
   onNavigate={selectView}
-  onAlert={setSelectedAlert}/>}{activeView === 'mine' && <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Spatial operations</p><h1 className="mt-2 font-display text-2xl font-semibold">Live mine map</h1><p className="mt-2 text-sm text-muted-foreground">Monitor zones, people, equipment, and risk in one view.</p></div><div className="flex gap-2"><Button variant="outline" size="sm"><RadioTower className="h-3.5 w-3.5" /> Sensor filter</Button><Button variant="outline" size="sm"><Users className="h-3.5 w-3.5" /> Worker filter</Button><Button variant="outline" size="sm"><AlertTriangle className="h-3.5 w-3.5" /> Risk level</Button></div></div><MapSurface onAlert={() => toast({ title: 'Map filters opened', description: 'Filter by sensors, workers, equipment, or risk level.' })} /></div>}{activeView === 'safety' && <SafetyView onSelect={setSelectedAlert} />}{activeView === 'workers' && <WorkersView onSelect={setSelectedWorker} />}{activeView === 'worker-approvals' && ( <ManagerApprovalCenter />)}{activeView === 'safety-verification' && (<SafetyVerificationCenter />)}{activeView === 'health' && <WorkerHealth />}{activeView === 'application-status' && (<ApplicationStatus />)}{activeView === 'leave' && (  
+  onAlert={setSelectedAlert}/>}
+  {activeView === 'mine' && <div className="space-y-6"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs text-muted-foreground">Spatial operations</p><h1 className="mt-2 font-display text-2xl font-semibold">Live mine map</h1><p className="mt-2 text-sm text-muted-foreground">Monitor zones, people, equipment, and risk in one view.</p></div><div className="flex gap-2"><Button variant="outline" size="sm"><RadioTower className="h-3.5 w-3.5" /> Sensor filter</Button><Button variant="outline" size="sm"><Users className="h-3.5 w-3.5" /> Worker filter</Button><Button variant="outline" size="sm"><AlertTriangle className="h-3.5 w-3.5" /> Risk level</Button></div></div>
+<LiveMineMapView
+  toast={toast}
+  onIncidentSelect={setSelectedAlert}
+/>
+    </div>}{activeView === 'safety' && <SafetyView onSelect={setSelectedAlert} />}{activeView === 'workers' && <WorkersView onSelect={setSelectedWorker} />}{activeView === 'worker-approvals' && ( <ManagerApprovalCenter />)}{activeView === 'safety-verification' && (<SafetyVerificationCenter />)}{activeView === 'health' && <WorkerHealth />}{activeView === 'application-status' && (<ApplicationStatus />)}{activeView === 'leave' && (  
   <div className="space-y-6">
     <div>
       <p className="text-xs text-muted-foreground">
@@ -2547,7 +4312,46 @@ function AppShell({
   </div>
 )}{activeView === 'equipment' && (<EquipmentManagement />)}{activeView === 'analytics' && <AnalyticsView />}{activeView === 'reports' && <ReportsView />}{activeView === 'admin' && (
   <AdminApprovalCenter />
-)}{activeView === 'settings' && <div className="ops-card max-w-2xl p-6"><PanelTitle icon={Settings} eyebrow="Workspace" title="Settings" /><div className="space-y-4"><div className="flex items-center justify-between rounded-lg border border-border p-4"><div><p className="text-sm font-semibold">Live alert sounds</p><p className="mt-1 text-xs text-muted-foreground">Play a sound when a critical alert is received.</p></div><input type="checkbox" defaultChecked className="h-4 w-4 accent-primary" /></div><div className="flex items-center justify-between rounded-lg border border-border p-4"><div><p className="text-sm font-semibold">Compact data density</p><p className="mt-1 text-xs text-muted-foreground">Show more operational rows in tables.</p></div><input type="checkbox" className="h-4 w-4 accent-primary" /></div><Button onClick={() => toast({ title: 'Settings saved', description: 'Workspace preferences updated.' })}>Save preferences</Button></div></div>}</main></div>{notifications && <div className="fixed right-4 top-[84px] z-40 w-[min(360px,calc(100vw-32px))] rounded-xl border border-border bg-surface p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><p className="text-sm font-semibold">Notifications</p><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setNotifications(false)} aria-label="Close notifications"><X className="h-3.5 w-3.5" /></Button></div><div className="space-y-2">{alerts.slice(0, 3).map((alert) => <Button key={alert.id} variant="ghost" className="flex h-auto w-full justify-start gap-3 rounded-lg p-2 text-left" onClick={() => { setSelectedAlert(alert); setNotifications(false); }}><StatusDot status={alert.severity === 'critical' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'info'} /><span className="min-w-0"><span className="block truncate text-xs font-semibold">{alert.title}</span><span className="mt-1 block text-[10px] text-muted-foreground">{alert.time}</span></span></Button>)}</div></div>}<DetailDrawer alert={selectedAlert} worker={selectedWorker} asset={selectedAsset} onClose={() => { setSelectedAlert(null); setSelectedWorker(null); setSelectedAsset(null); }} onNavigate={(view) => { setSelectedAlert(null); selectView(view); }} /></div>;
+)}{activeView === 'settings' && <div className="ops-card max-w-2xl p-6"><PanelTitle icon={Settings} eyebrow="Workspace" title="Settings" /><div className="space-y-4"><div className="flex items-center justify-between rounded-lg border border-border p-4"><div><p className="text-sm font-semibold">Live alert sounds</p><p className="mt-1 text-xs text-muted-foreground">Play a sound when a critical alert is received.</p></div><input type="checkbox" defaultChecked className="h-4 w-4 accent-primary" /></div><div className="flex items-center justify-between rounded-lg border border-border p-4"><div><p className="text-sm font-semibold">Compact data density</p><p className="mt-1 text-xs text-muted-foreground">Show more operational rows in tables.</p></div><input type="checkbox" className="h-4 w-4 accent-primary" /></div><Button onClick={() => toast({ title: 'Settings saved', description: 'Workspace preferences updated.' })}>Save preferences</Button></div></div>}</main></div>{notifications && <div className="fixed right-4 top-[84px] z-40 w-[min(360px,calc(100vw-32px))] rounded-xl border border-border bg-surface p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><p className="text-sm font-semibold">Notifications</p><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setNotifications(false)} aria-label="Close notifications"><X className="h-3.5 w-3.5" /></Button></div><div className="space-y-2">
+{liveNotifications.length === 0 ? (
+  <div className="px-2 py-5 text-center text-xs text-muted-foreground">
+    No recent incidents
+  </div>
+) : (
+  liveNotifications.map((incident) => (
+    <Button
+      key={incident.id}
+      variant="ghost"
+      className="flex h-auto w-full justify-start gap-3 rounded-lg p-2 text-left"
+      onClick={() => {
+        setSelectedAlert(incident);
+        setNotifications(false);
+      }}
+    >
+      <StatusDot
+        status={
+          incident.severity === 'CRITICAL' ||
+          incident.severity === 'HIGH'
+            ? 'danger'
+            : incident.severity === 'MEDIUM'
+            ? 'warning'
+            : 'info'
+        }
+      />
+
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-semibold">
+          {incident.title}
+        </span>
+
+        <span className="mt-1 block text-[10px] text-muted-foreground">
+          {incident.location || 'Unknown location'} ·{' '}
+          {new Date(incident.created_at).toLocaleString()}
+        </span>
+      </span>
+    </Button>
+  ))
+)}</div></div>}<DetailDrawer alert={selectedAlert} worker={selectedWorker} asset={selectedAsset} onClose={() => { setSelectedAlert(null); setSelectedWorker(null); setSelectedAsset(null); }} onNavigate={(view) => { setSelectedAlert(null); selectView(view); }} /></div>;
 }
 
 export default function NeonovaPlatform() {
