@@ -25,7 +25,8 @@ import {
    cancelLeaveRequest,
   createLeaveRequest,
   getLeaveRequests,
-   
+   getLeaveBalance,
+  type LeaveBalanceApi,
 } from '@/lib/api';
 
 const leaveRequestSchema = z
@@ -105,6 +106,7 @@ type LeaveRequest = {
   reason: string;
   status: LeaveStatus;
   submittedAt: string;
+   rejectionReason?: string | null;
 };
 
 type LeaveForm = {
@@ -121,33 +123,7 @@ const leaveLabels: Record<LeaveType, string> = {
   emergency: 'Emergency leave',
 };
 
-const leaveBalances: Record<
-  LeaveType,
-  {
-    total: number;
-    used: number;
-  }
-> = {
-  annual: {
-    total: 20,
-    used: 6,
-  },
 
-  sick: {
-    total: 10,
-    used: 2,
-  },
-
-  personal: {
-    total: 5,
-    used: 1,
-  },
-
-  emergency: {
-    total: 3,
-    used: 0,
-  },
-};
 
 const initialForm: LeaveForm = {
   leaveType: '',
@@ -274,6 +250,8 @@ const mapApiRequest = (
     reason: string;
     status: LeaveStatus;
     submitted_at: string;
+
+    rejection_reason?: string | null;
   },
 ): LeaveRequest => ({
   id: request.id,
@@ -285,6 +263,9 @@ const mapApiRequest = (
   reason: request.reason,
   status: request.status,
   submittedAt: request.submitted_at,
+
+  rejectionReason:
+    request.rejection_reason ?? null,
 });
 
 export default function LeaveManagementForm() {
@@ -293,6 +274,12 @@ export default function LeaveManagementForm() {
 
   const [requests, setRequests] =
     useState<LeaveRequest[]>([]);
+
+  const [balances, setBalances] =
+    useState<LeaveBalanceApi[]>([]);
+
+  const [balanceLoading, setBalanceLoading] =
+    useState(true);
 
   const [showForm, setShowForm] =
     useState(false);
@@ -314,37 +301,49 @@ export default function LeaveManagementForm() {
   // --------------------------------------------------
 
   useEffect(() => {
-    const loadLeaveRequests =
+    const loadLeaveData =
       async () => {
         try {
           setLoading(true);
+          setBalanceLoading(true);
 
-          const data =
-            await getLeaveRequests();
+          const [
+            leaveRequests,
+            leaveBalance,
+          ] = await Promise.all([
+            getLeaveRequests(),
+            getLeaveBalance(),
+          ]);
 
-          const mappedRequests =
-            data.map(mapApiRequest);
+          setRequests(
+            leaveRequests.map(mapApiRequest),
+          );
 
-          setRequests(mappedRequests);
+          setBalances(
+            leaveBalance.balances,
+          );
         } catch (error) {
           console.error(
-            'Unable to load leave requests:',
+            'Unable to load worker leave data:',
             error,
           );
 
           toast({
             title:
-              'Unable to load leave history',
+              'Unable to load leave information',
             description:
-              'Make sure the MINEXA backend is running.',
+              error instanceof Error
+                ? error.message
+                : 'Make sure the MINEXA backend is running.',
             variant: 'destructive',
           });
         } finally {
           setLoading(false);
+          setBalanceLoading(false);
         }
       };
 
-    loadLeaveRequests();
+    loadLeaveData();
   }, [toast]);
 
   // --------------------------------------------------
@@ -378,49 +377,43 @@ export default function LeaveManagementForm() {
   };
 
   // --------------------------------------------------
-  // SELECTED LEAVE BALANCE
+  // LIVE LEAVE BALANCE HELPERS
   // --------------------------------------------------
+
+  const getBalance = (
+    type: LeaveType,
+  ) =>
+    balances.find(
+      (balance) =>
+        balance.leaveType === type,
+    );
 
   const selectedBalance =
-    form.leaveType &&
-    form.leaveType in leaveBalances
-      ? leaveBalances[
-          form.leaveType as LeaveType
-        ]
+    form.leaveType
+      ? getBalance(
+          form.leaveType as LeaveType,
+        ) ?? null
       : null;
-
-  // --------------------------------------------------
-  // CALCULATE REMAINING BALANCE
-  // --------------------------------------------------
 
   const getRemainingBalance = (
     type: LeaveType,
-  ) => {
-    const base =
-      leaveBalances[type].total -
-      leaveBalances[type].used;
+  ) =>
+    getBalance(type)?.remainingDays ?? 0;
 
-    const reserved =
-      requests
-        .filter(
-          (request) =>
-            request.leaveType === type &&
-            (
-              request.status === 'pending' ||
-              request.status === 'approved'
-            ),
-        )
-        .reduce(
-          (sum, request) =>
-            sum + request.days,
-          0,
-        );
+  const getAllocatedDays = (
+    type: LeaveType,
+  ) =>
+    getBalance(type)?.allocatedDays ?? 0;
 
-    return Math.max(
-      base - reserved,
-      0,
-    );
-  };
+  const getApprovedDays = (
+    type: LeaveType,
+  ) =>
+    getBalance(type)?.approvedDays ?? 0;
+
+  const getPendingDays = (
+    type: LeaveType,
+  ) =>
+    getBalance(type)?.pendingDays ?? 0;
 
   // --------------------------------------------------
   // SUBMIT LEAVE REQUEST
@@ -470,32 +463,23 @@ export default function LeaveManagementForm() {
       return;
     }
 
-    const balance =
-      leaveBalances[
-        result.data.leaveType
-      ];
+    const balance = getBalance(
+      result.data.leaveType,
+    );
 
-    const pendingOrApprovedDays =
-      requests
-        .filter(
-          (request) =>
-            request.leaveType ===
-              result.data.leaveType &&
-            (
-              request.status === 'pending' ||
-              request.status === 'approved'
-            ),
-        )
-        .reduce(
-          (sum, request) =>
-            sum + request.days,
-          0,
-        );
+    if (!balance) {
+      toast({
+        title: 'Leave balance unavailable',
+        description:
+          'No balance has been configured for this leave type.',
+        variant: 'destructive',
+      });
+
+      return;
+    }
 
     const remaining =
-      balance.total -
-      balance.used -
-      pendingOrApprovedDays;
+      balance.remainingDays;
 
     if (requestDays > remaining) {
       toast({
@@ -536,6 +520,21 @@ export default function LeaveManagementForm() {
         ],
       );
 
+      // Refresh balance so pending days stay in sync.
+      try {
+        const updatedBalance =
+          await getLeaveBalance();
+
+        setBalances(
+          updatedBalance.balances,
+        );
+      } catch (balanceError) {
+        console.error(
+          'Unable to refresh leave balance:',
+          balanceError,
+        );
+      }
+
       // Reset form
       setForm(initialForm);
 
@@ -569,11 +568,7 @@ export default function LeaveManagementForm() {
   };
 
   // --------------------------------------------------
-  // FRONTEND CANCEL
-  //
-  // IMPORTANT:
-  // This is temporary. We will replace this with
-  // PATCH /api/v1/leave-requests/:id/cancel
+  // CANCEL LEAVE REQUEST
   // --------------------------------------------------
 
   const cancelRequest = async (id: number) => {
@@ -681,64 +676,74 @@ export default function LeaveManagementForm() {
       {/* ------------------------------------------- */}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {(
-          Object.keys(
-            leaveBalances,
-          ) as LeaveType[]
-        ).map((type) => {
-          const remaining =
-            getRemainingBalance(
-              type,
-            );
+        {(Object.keys(leaveLabels) as LeaveType[]).map(
+          (type) => {
+            const total = getAllocatedDays(type);
+            const remaining = getRemainingBalance(type);
+            const approved = getApprovedDays(type);
+            const pending = getPendingDays(type);
+            const usedPercent =
+              total > 0
+                ? Math.min(
+                    (approved / total) * 100,
+                    100,
+                  )
+                : 0;
 
-          const total =
-            leaveBalances[type]
-              .total;
+            return (
+              <div
+                key={type}
+                className="ops-card p-4"
+              >
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[.16em] text-muted-foreground">
+                      {leaveLabels[type]}
+                    </p>
 
-          const used =
-            total - remaining;
+                    {balanceLoading ? (
+                      <p className="mt-2 text-2xl font-semibold text-muted-foreground">
+                        —
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-2xl font-semibold text-foreground">
+                        {remaining}
+                      </p>
+                    )}
 
-          return (
-            <div
-              key={type}
-              className="ops-card p-4"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[.16em] text-muted-foreground">
-                    {leaveLabels[type]}
-                  </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      remaining of {total} days
+                    </p>
+                  </div>
 
-                  <p className="mt-2 text-2xl font-semibold text-foreground">
-                    {remaining}
-                  </p>
-
-                  <p className="text-[11px] text-muted-foreground">
-                    remaining of {total}{' '}
-                    days
-                  </p>
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <CalendarDays className="h-4 w-4" />
+                  </span>
                 </div>
 
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <CalendarDays className="h-4 w-4" />
-                </span>
-              </div>
+                <div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>
+                    {approved} approved
+                  </span>
+                  {pending > 0 && (
+                    <span>
+                      {pending} pending
+                    </span>
+                  )}
+                </div>
 
-              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-secondary">
-                <div
-                  className="h-full rounded-full bg-primary transition-all"
-                  style={{
-                    width: `${Math.min(
-                      (used / total) *
-                        100,
-                      100,
-                    )}%`,
-                  }}
-                />
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="h-full rounded-full bg-primary transition-all"
+                    style={{
+                      width: `${usedPercent}%`,
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          },
+        )}
       </div>
 
       {/* ------------------------------------------- */}
@@ -1102,6 +1107,18 @@ export default function LeaveManagementForm() {
                           request.reason
                         }
                       </p>
+                      {request.status === 'rejected' &&
+  request.rejectionReason && (
+    <div className="mt-3 rounded-lg border border-safety-danger/20 bg-safety-danger/5 p-3">
+      <p className="text-[10px] font-bold uppercase tracking-[.15em] text-safety-danger">
+        Rejection reason
+      </p>
+
+      <p className="mt-1 text-xs leading-5 text-safety-danger/90">
+        {request.rejectionReason}
+      </p>
+    </div>
+  )}
                     </div>
 {request.status === 'pending' && (
   <Button
@@ -1126,27 +1143,9 @@ export default function LeaveManagementForm() {
         )}
       </div>
 
-      {/* ------------------------------------------- */}
-      {/* BACKEND STATUS                              */}
-      {/* ------------------------------------------- */}
+     
 
-      <div className="rounded-lg border border-primary/15 bg-primary/5 p-4">
-        <div className="flex gap-3">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-
-          <div>
-            <p className="text-xs font-semibold text-foreground">
-              Database connected
-            </p>
-
-            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-              Leave requests are now loaded from
-              the MINEXA Express API and PostgreSQL
-              database.
-            </p>
-          </div>
-        </div>
-      </div>
+      
     </section>
   );
 }

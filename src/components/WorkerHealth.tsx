@@ -8,14 +8,20 @@ import {
   Droplets,
   FileCheck2,
   HeartPulse,
+  Pencil,
+  Save,
   ShieldCheck,
   UserRound,
+  X,
   XCircle,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-
+import {
+  getMyHealth,
+  updateMyHealth,
+} from '@/lib/api';
 type FitnessStatus =
   | 'fit'
   | 'fit_restricted'
@@ -46,6 +52,11 @@ type HealthData = {
   fitnessStatus: FitnessStatus;
   lastAssessmentDate: string;
   nextAssessmentDate: string;
+
+  bloodGroup: string;
+  restrictions: string;
+  notes: string;
+
   healthScore: number;
   hydration: number;
   restScore: number;
@@ -55,7 +66,7 @@ type HealthData = {
   notifications: HealthNotification[];
 };
 
-const STORAGE_KEY = 'minexa-worker-health';
+
 
 const initialHealthData: HealthData = {
   fitnessStatus: 'fit',
@@ -66,6 +77,9 @@ const initialHealthData: HealthData = {
   restScore: 72,
   fatigueLevel: 'Moderate',
   medicalCertificateValidUntil: '2027-02-18',
+  bloodGroup: '',
+  restrictions: '',
+  notes: '',
 
   checkups: [
     {
@@ -152,21 +166,32 @@ const fitnessMeta: Record<
   },
 };
 
-const formatDate = (date: string) => {
+const formatDate = (date: string | null | undefined) => {
   if (!date) return '-';
+
+  const parsedDate = new Date(date);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return '-';
+  }
 
   return new Intl.DateTimeFormat('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-  }).format(new Date(`${date}T00:00:00`));
+  }).format(parsedDate);
 };
 
 const getDaysUntil = (date: string) => {
   const today = new Date();
-  const target = new Date(`${date}T00:00:00`);
+  const target = new Date(date);
+
+  if (Number.isNaN(target.getTime())) {
+    return 0;
+  }
 
   today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
 
   const difference =
     target.getTime() - today.getTime();
@@ -193,42 +218,213 @@ export default function WorkerHealth() {
   const [health, setHealth] =
     useState<HealthData>(initialHealthData);
 
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState('');
+
   const { toast } = useToast();
+const [editing, setEditing] = useState(false);
 
+const [saving, setSaving] = useState(false);
+
+const [editForm, setEditForm] = useState({
+  bloodGroup: '',
+  medicalCheckDate: '',
+  fitnessExpiryDate: '',
+  restrictions: '',
+  notes: '',
+});
   useEffect(() => {
+  let mounted = true;
+
+  const loadHealth = async () => {
     try {
-      const saved =
-        localStorage.getItem(STORAGE_KEY);
+      setLoading(true);
+      setError('');
 
-      if (!saved) return;
+      const apiHealth = await getMyHealth();
+setEditForm({
+  bloodGroup: apiHealth.blood_group || '',
+  medicalCheckDate:
+    apiHealth.medical_check_date
+      ? apiHealth.medical_check_date.slice(0, 10)
+      : '',
+  fitnessExpiryDate:
+    apiHealth.fitness_expiry_date
+      ? apiHealth.fitness_expiry_date.slice(0, 10)
+      : '',
+  restrictions: apiHealth.restrictions || '',
+  notes: apiHealth.notes || '',
+});
+      if (!mounted) return;
 
-      const parsed = JSON.parse(saved);
+      setHealth((current) => ({
+        ...current,
 
-      if (parsed) {
-        setHealth(parsed);
+        fitnessStatus:
+          apiHealth.medical_status ===
+          'FIT'
+            ? 'fit'
+            : apiHealth.medical_status ===
+              'FIT_WITH_RESTRICTIONS'
+            ? 'fit_restricted'
+            : apiHealth.medical_status ===
+              'PENDING'
+            ? 'medical_review'
+            : 'not_fit',
+
+        lastAssessmentDate:
+          apiHealth.medical_check_date ||
+          current.lastAssessmentDate,
+
+        nextAssessmentDate:
+          apiHealth.fitness_expiry_date ||
+          current.nextAssessmentDate,
+
+        medicalCertificateValidUntil:
+          apiHealth.fitness_expiry_date ||
+          current.medicalCertificateValidUntil,
+bloodGroup:
+  apiHealth.blood_group ||
+  current.bloodGroup,
+
+restrictions:
+  apiHealth.restrictions ||
+  current.restrictions,
+
+notes:
+  apiHealth.notes ||
+  current.notes,
+        // These are not currently supplied
+        // by the backend, so preserve existing
+        // frontend-only values for now.
+        healthScore: current.healthScore,
+        hydration: current.hydration,
+        restScore: current.restScore,
+        fatigueLevel: current.fatigueLevel,
+        checkups: current.checkups,
+        notifications: current.notifications,
+      }));
+
+    } catch (err) {
+      console.error(
+        'Failed to load worker health:',
+        err
+      );
+
+      if (!mounted) return;
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to load health profile.'
+      );
+
+    } finally {
+      if (mounted) {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error(
-        'Unable to load worker health data:',
-        error,
-      );
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(health),
-      );
-    } catch (error) {
-      console.error(
-        'Unable to save worker health data:',
-        error,
-      );
-    }
-  }, [health]);
+  loadHealth();
 
+  return () => {
+    mounted = false;
+  };
+}, []);
+  
+const handleSaveHealth = async () => {
+  try {
+    setSaving(true);
+
+    const updated = await updateMyHealth({
+      bloodGroup:
+        editForm.bloodGroup.trim() || null,
+
+      medicalCheckDate:
+        editForm.medicalCheckDate || null,
+
+      fitnessExpiryDate:
+        editForm.fitnessExpiryDate || null,
+
+      restrictions:
+        editForm.restrictions.trim() || null,
+
+      notes:
+        editForm.notes.trim() || null,
+    });
+
+    setHealth((current) => ({
+      ...current,
+
+      bloodGroup:
+        updated.blood_group || '',
+
+      lastAssessmentDate:
+        updated.medical_check_date ||
+        current.lastAssessmentDate,
+
+      nextAssessmentDate:
+        updated.fitness_expiry_date ||
+        current.nextAssessmentDate,
+
+      medicalCertificateValidUntil:
+        updated.fitness_expiry_date ||
+        current.medicalCertificateValidUntil,
+
+      restrictions:
+        updated.restrictions || '',
+
+      notes:
+        updated.notes || '',
+    }));
+
+    setEditForm({
+      bloodGroup: updated.blood_group || '',
+      medicalCheckDate:
+        updated.medical_check_date
+          ? updated.medical_check_date.slice(0, 10)
+          : '',
+      fitnessExpiryDate:
+        updated.fitness_expiry_date
+          ? updated.fitness_expiry_date.slice(0, 10)
+          : '',
+      restrictions:
+        updated.restrictions || '',
+      notes:
+        updated.notes || '',
+    });
+
+    setEditing(false);
+
+    toast({
+      title: 'Health details updated',
+      description:
+        'Your health profile has been saved successfully.',
+    });
+
+  } catch (err) {
+    console.error(
+      'Failed to update health profile:',
+      err
+    );
+
+    toast({
+      title: 'Update failed',
+      description:
+        err instanceof Error
+          ? err.message
+          : 'Unable to update your health profile.',
+      variant: 'destructive',
+    });
+
+  } finally {
+    setSaving(false);
+  }
+};
   const nextCheckup = useMemo(() => {
     return health.checkups
       .filter((item) => item.status === 'upcoming')
@@ -249,6 +445,42 @@ export default function WorkerHealth() {
 
   const FitnessIcon =
     fitnessMeta[health.fitnessStatus].icon;
+
+  if (loading) {
+    return (
+      <section className="flex min-h-[400px] items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+
+          <p className="mt-3 text-sm font-semibold">
+            Loading health profile...
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            Fetching your latest medical fitness status.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="flex min-h-[400px] items-center justify-center">
+        <div className="max-w-md text-center">
+          <XCircle className="mx-auto h-7 w-7 text-safety-danger" />
+
+          <p className="mt-3 text-sm font-semibold text-safety-danger">
+            Unable to load health profile
+          </p>
+
+          <p className="mt-1 text-xs text-muted-foreground">
+            {error}
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   const markAllNotificationsRead = () => {
     setHealth((current) => ({
@@ -321,22 +553,196 @@ export default function WorkerHealth() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-background/40 px-3 py-2">
-            <UserRound className="h-4 w-4 text-muted-foreground" />
+<div className="flex items-center gap-2">
+  <div className="flex items-center gap-2 rounded-lg border border-border bg-background/40 px-3 py-2">
+    <UserRound className="h-4 w-4 text-muted-foreground" />
 
-            <div>
-              <p className="text-[10px] text-muted-foreground">
-                Worker
-              </p>
+    <div>
+      <p className="text-[10px] text-muted-foreground">
+        Worker
+      </p>
 
-              <p className="text-xs font-semibold">
-                Himanshu Kumar · MW-1042
-              </p>
-            </div>
-          </div>
+      <p className="text-xs font-semibold">
+        Himanshu Kumar · MW-1042
+      </p>
+    </div>
+  </div>
+
+  <Button
+    type="button"
+    variant="outline"
+    size="sm"
+    onClick={() => setEditing((current) => !current)}
+    className="gap-2"
+  >
+    {editing ? (
+      <>
+        <X className="h-4 w-4" />
+        Cancel
+      </>
+    ) : (
+      <>
+        <Pencil className="h-4 w-4" />
+        Edit health
+      </>
+    )}
+  </Button>
+</div>
         </div>
       </div>
+      
+{editing && (
+  <div className="ops-card p-6">
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[.18em] text-primary">
+          Health profile
+        </p>
 
+        <h2 className="mt-1 font-display text-lg font-semibold">
+          Edit health details
+        </h2>
+
+        <p className="mt-1 text-xs text-muted-foreground">
+          Update your self-managed health information.
+          Medical fitness status is controlled by authorized
+          safety personnel.
+        </p>
+      </div>
+
+      <ShieldCheck className="h-5 w-5 text-primary" />
+    </div>
+
+    <div className="mt-6 grid gap-4 sm:grid-cols-2">
+
+      {/* Blood group */}
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-[.15em] text-muted-foreground">
+          Blood group
+        </label>
+
+        <input
+          type="text"
+          value={editForm.bloodGroup}
+          onChange={(event) =>
+            setEditForm((current) => ({
+              ...current,
+              bloodGroup: event.target.value,
+            }))
+          }
+          placeholder="e.g. B+"
+          className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:border-primary"
+        />
+      </div>
+
+      {/* Medical check date */}
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-[.15em] text-muted-foreground">
+          Medical check date
+        </label>
+
+        <input
+          type="date"
+          value={editForm.medicalCheckDate}
+          onChange={(event) =>
+            setEditForm((current) => ({
+              ...current,
+              medicalCheckDate:
+                event.target.value,
+            }))
+          }
+          className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:border-primary"
+        />
+      </div>
+
+      {/* Fitness expiry */}
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-[.15em] text-muted-foreground">
+          Fitness expiry date
+        </label>
+
+        <input
+          type="date"
+          value={editForm.fitnessExpiryDate}
+          onChange={(event) =>
+            setEditForm((current) => ({
+              ...current,
+              fitnessExpiryDate:
+                event.target.value,
+            }))
+          }
+          className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:border-primary"
+        />
+      </div>
+
+      {/* Restrictions */}
+      <div>
+        <label className="text-[10px] font-bold uppercase tracking-[.15em] text-muted-foreground">
+          Work restrictions
+        </label>
+
+        <input
+          type="text"
+          value={editForm.restrictions}
+          onChange={(event) =>
+            setEditForm((current) => ({
+              ...current,
+              restrictions:
+                event.target.value,
+            }))
+          }
+          placeholder="e.g. Avoid night shift"
+          className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:border-primary"
+        />
+      </div>
+
+    </div>
+
+    {/* Notes */}
+    <div className="mt-4">
+      <label className="text-[10px] font-bold uppercase tracking-[.15em] text-muted-foreground">
+        Health notes
+      </label>
+
+      <textarea
+        value={editForm.notes}
+        onChange={(event) =>
+          setEditForm((current) => ({
+            ...current,
+            notes: event.target.value,
+          }))
+        }
+        rows={4}
+        placeholder="Add any relevant self-managed notes..."
+        className="mt-2 w-full resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm outline-none transition focus:border-primary"
+      />
+    </div>
+
+    <div className="mt-5 flex justify-end gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => setEditing(false)}
+        disabled={saving}
+      >
+        Cancel
+      </Button>
+
+      <Button
+        type="button"
+        onClick={handleSaveHealth}
+        disabled={saving}
+        className="gap-2"
+      >
+        <Save className="h-4 w-4" />
+
+        {saving
+          ? 'Saving...'
+          : 'Save health details'}
+      </Button>
+    </div>
+  </div>
+)}
       {/* Main fitness status */}
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <div className="ops-card p-6">
@@ -745,26 +1151,8 @@ export default function WorkerHealth() {
         )}
       </div>
 
-      {/* Demo storage note */}
-      <div className="rounded-lg border border-primary/15 bg-primary/5 p-4">
-        <div className="flex gap-3">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-
-          <div>
-            <p className="text-xs font-semibold">
-              Frontend development mode
-            </p>
-
-            <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
-              Health and wellness data is currently stored in
-              your browser using localStorage. In the production
-              version, these records will come from the MINEXA
-              backend and authorized medical/administrative
-              workflows.
-            </p>
-          </div>
-        </div>
-      </div>
+     
+     
     </section>
   );
 }

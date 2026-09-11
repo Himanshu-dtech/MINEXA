@@ -314,4 +314,127 @@ router.get(
     }
 );
 
+
+// =================================================
+// ADMIN ANALYTICS SUMMARY
+// Platform-wide analytics for Platform Admin
+// =================================================
+
+router.get(
+    '/admin-summary',
+    authenticateToken,
+    requireRoles('PLATFORM_ADMIN'),
+    async (req, res) => {
+        try {
+            const minesResult = await pool.query(`
+                SELECT
+                    COUNT(*)::INTEGER AS total,
+                    COUNT(*) FILTER (
+                        WHERE status = 'ACTIVE'
+                    )::INTEGER AS active
+                FROM mines
+            `);
+
+            const workersResult = await pool.query(`
+                SELECT COUNT(*)::INTEGER AS total
+                FROM workers
+            `);
+
+            const incidentsResult = await pool.query(`
+                SELECT
+                    COUNT(*)::INTEGER AS total,
+                    COUNT(*) FILTER (
+                        WHERE status IN (
+                            'OPEN',
+                            'UNDER_INVESTIGATION'
+                        )
+                    )::INTEGER AS active,
+                    COUNT(*) FILTER (
+                        WHERE severity = 'HIGH'
+                    )::INTEGER AS high_risk,
+                    COUNT(*) FILTER (
+                        WHERE severity = 'CRITICAL'
+                    )::INTEGER AS critical
+                FROM incidents
+            `);
+
+            const equipmentResult = await pool.query(`
+                SELECT
+                    COUNT(*)::INTEGER AS total,
+                    COUNT(*) FILTER (
+                        WHERE status IN (
+                            'AVAILABLE',
+                            'IN_USE'
+                        )
+                    )::INTEGER AS operational,
+                    COUNT(*) FILTER (
+                        WHERE status = 'MAINTENANCE'
+                    )::INTEGER AS maintenance,
+                    COUNT(*) FILTER (
+                        WHERE status = 'OUT_OF_SERVICE'
+                    )::INTEGER AS out_of_service
+                FROM equipment
+            `);
+
+            const attendanceResult = await pool.query(`
+                SELECT
+                    COUNT(*)::INTEGER AS records,
+                    COUNT(*) FILTER (
+                        WHERE attendance_date = CURRENT_DATE
+                    )::INTEGER AS today_records,
+                    COUNT(*) FILTER (
+                        WHERE attendance_date = CURRENT_DATE
+                        AND status = 'LATE'
+                    )::INTEGER AS today_late
+                FROM attendance
+            `);
+
+            return res.status(200).json({
+                status: 'success',
+
+                mines: {
+                    total: minesResult.rows[0].total,
+                    active: minesResult.rows[0].active
+                },
+
+                workers: {
+                    total: workersResult.rows[0].total
+                },
+
+                incidents: {
+                    total: incidentsResult.rows[0].total,
+                    active: incidentsResult.rows[0].active,
+                    highRisk: incidentsResult.rows[0].high_risk,
+                    critical: incidentsResult.rows[0].critical
+                },
+
+                equipment: {
+                    total: equipmentResult.rows[0].total,
+                    operational: equipmentResult.rows[0].operational,
+                    maintenance: equipmentResult.rows[0].maintenance,
+                    outOfService: equipmentResult.rows[0].out_of_service
+                },
+
+                attendance: {
+                    records: attendanceResult.rows[0].records,
+                    todayRecords:
+                        attendanceResult.rows[0].today_records,
+                    todayLate:
+                        attendanceResult.rows[0].today_late
+                }
+            });
+
+        } catch (error) {
+            console.error(
+                'Admin analytics summary error:',
+                error
+            );
+
+            return res.status(500).json({
+                status: 'error',
+                message: 'Failed to load admin analytics.'
+            });
+        }
+    }
+);
 module.exports = router;

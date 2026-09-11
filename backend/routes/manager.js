@@ -646,5 +646,421 @@ text:
         }
     }
 );
+/*
+=================================================
+GET PENDING LEAVE REQUESTS
+MINE MANAGER ONLY
+=================================================
+*/
 
+router.get(
+    '/leave-requests',
+    authenticateToken,
+    requireRoles('MINE_MANAGER'),
+    async (req, res) => {
+        try {
+            const managerResult = await pool.query(
+                `
+                SELECT mine_id
+                FROM users
+                WHERE id = $1
+                  AND role = 'MINE_MANAGER'
+                  AND account_status = 'ACTIVE'
+                  AND is_verified = TRUE
+                `,
+                [req.user.userId]
+            );
+
+            if (
+                managerResult.rows.length === 0 ||
+                !managerResult.rows[0].mine_id
+            ) {
+                return res.status(403).json({
+                    status: 'error',
+                    message: 'Manager is not assigned to a mine.'
+                });
+            }
+
+            const mineId =
+                managerResult.rows[0].mine_id;
+
+            const result = await pool.query(
+                `
+                SELECT
+                    lr.id,
+                    lr.worker_id,
+                    w.name AS worker_name,
+                    w.employee_code,
+                    lr.leave_type,
+                    lr.start_date,
+                    lr.end_date,
+                    lr.days,
+                    lr.reason,
+                    lr.status,
+                    lr.submitted_at,
+                    lr.reviewed_by,
+                    lr.reviewed_at,
+                    lr.rejection_reason
+                FROM leave_requests lr
+                INNER JOIN workers w
+                    ON w.id = lr.worker_id
+                WHERE w.mine_id = $1
+                  AND lr.status = 'pending'
+                ORDER BY lr.submitted_at ASC
+                `,
+                [mineId]
+            );
+
+            return res.status(200).json({
+                status: 'success',
+                requests: result.rows
+            });
+
+        } catch (error) {
+            console.error(
+                'Manager leave requests error:',
+                error
+            );
+
+            return res.status(500).json({
+                status: 'error',
+                message:
+                    'Failed to fetch pending leave requests.'
+            });
+        }
+    }
+);
+/*
+=================================================
+APPROVE LEAVE REQUEST
+MINE MANAGER ONLY
+=================================================
+*/
+
+router.patch(
+    '/leave-requests/:id/approve',
+    authenticateToken,
+    requireRoles('MINE_MANAGER'),
+    async (req, res) => {
+        const client = await pool.connect();
+
+        try {
+            const leaveId =
+                Number(req.params.id);
+
+            if (
+                !Number.isInteger(leaveId) ||
+                leaveId <= 0
+            ) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Invalid leave request ID.'
+                });
+            }
+
+            await client.query('BEGIN');
+
+            const managerResult =
+                await client.query(
+                    `
+                    SELECT mine_id
+                    FROM users
+                    WHERE id = $1
+                      AND role = 'MINE_MANAGER'
+                      AND account_status = 'ACTIVE'
+                      AND is_verified = TRUE
+                    `,
+                    [req.user.userId]
+                );
+
+            if (
+                managerResult.rows.length === 0 ||
+                !managerResult.rows[0].mine_id
+            ) {
+                await client.query('ROLLBACK');
+
+                return res.status(403).json({
+                    status: 'error',
+                    message:
+                        'Manager is not assigned to a mine.'
+                });
+            }
+
+            const managerMineId =
+                managerResult.rows[0].mine_id;
+
+            const leaveResult =
+                await client.query(
+                    `
+                    SELECT
+                        lr.*,
+                        w.mine_id
+                    FROM leave_requests lr
+                    INNER JOIN workers w
+                        ON w.id = lr.worker_id
+                    WHERE lr.id = $1
+                    FOR UPDATE
+                    `,
+                    [leaveId]
+                );
+
+            if (leaveResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+
+                return res.status(404).json({
+                    status: 'error',
+                    message:
+                        'Leave request not found.'
+                });
+            }
+
+            const leaveRequest =
+                leaveResult.rows[0];
+
+            if (
+                leaveRequest.mine_id !==
+                managerMineId
+            ) {
+                await client.query('ROLLBACK');
+
+                return res.status(403).json({
+                    status: 'error',
+                    message:
+                        'You can only approve leave requests from your assigned mine.'
+                });
+            }
+
+            if (
+                leaveRequest.status !== 'pending'
+            ) {
+                await client.query('ROLLBACK');
+
+                return res.status(409).json({
+                    status: 'error',
+                    message:
+                        'This leave request has already been processed.'
+                });
+            }
+
+            const updatedResult =
+                await client.query(
+                    `
+                    UPDATE leave_requests
+                    SET
+                        status = 'approved',
+                        reviewed_by = $1,
+                        reviewed_at = CURRENT_TIMESTAMP,
+                        rejection_reason = NULL
+                    WHERE id = $2
+                    RETURNING *
+                    `,
+                    [
+                        req.user.userId,
+                        leaveId
+                    ]
+                );
+
+            await client.query('COMMIT');
+
+            return res.status(200).json({
+                status: 'success',
+                message:
+                    'Leave request approved successfully.',
+                request:
+                    updatedResult.rows[0]
+            });
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+
+            console.error(
+                'Approve leave error:',
+                error
+            );
+
+            return res.status(500).json({
+                status: 'error',
+                message:
+                    'Failed to approve leave request.'
+            });
+
+        } finally {
+            client.release();
+        }
+    }
+);
+
+/*
+=================================================
+REJECT LEAVE REQUEST
+MINE MANAGER ONLY
+=================================================
+*/
+
+router.patch(
+    '/leave-requests/:id/reject',
+    authenticateToken,
+    requireRoles('MINE_MANAGER'),
+    async (req, res) => {
+        const client = await pool.connect();
+
+        try {
+            const leaveId =
+                Number(req.params.id);
+
+            const reason =
+                typeof req.body.reason === 'string'
+                    ? req.body.reason.trim()
+                    : '';
+
+            if (
+                !Number.isInteger(leaveId) ||
+                leaveId <= 0
+            ) {
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'Invalid leave request ID.'
+                });
+            }
+
+            if (!reason) {
+                return res.status(400).json({
+                    status: 'error',
+                    message:
+                        'A rejection reason is required.'
+                });
+            }
+
+            await client.query('BEGIN');
+
+            const managerResult =
+                await client.query(
+                    `
+                    SELECT mine_id
+                    FROM users
+                    WHERE id = $1
+                      AND role = 'MINE_MANAGER'
+                      AND account_status = 'ACTIVE'
+                      AND is_verified = TRUE
+                    `,
+                    [req.user.userId]
+                );
+
+            if (
+                managerResult.rows.length === 0 ||
+                !managerResult.rows[0].mine_id
+            ) {
+                await client.query('ROLLBACK');
+
+                return res.status(403).json({
+                    status: 'error',
+                    message:
+                        'Manager is not assigned to a mine.'
+                });
+            }
+
+            const managerMineId =
+                managerResult.rows[0].mine_id;
+
+            const leaveResult =
+                await client.query(
+                    `
+                    SELECT
+                        lr.*,
+                        w.mine_id
+                    FROM leave_requests lr
+                    INNER JOIN workers w
+                        ON w.id = lr.worker_id
+                    WHERE lr.id = $1
+                    FOR UPDATE
+                    `,
+                    [leaveId]
+                );
+
+            if (leaveResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+
+                return res.status(404).json({
+                    status: 'error',
+                    message:
+                        'Leave request not found.'
+                });
+            }
+
+            const leaveRequest =
+                leaveResult.rows[0];
+
+            if (
+                leaveRequest.mine_id !==
+                managerMineId
+            ) {
+                await client.query('ROLLBACK');
+
+                return res.status(403).json({
+                    status: 'error',
+                    message:
+                        'You can only reject leave requests from your assigned mine.'
+                });
+            }
+
+            if (
+                leaveRequest.status !== 'pending'
+            ) {
+                await client.query('ROLLBACK');
+
+                return res.status(409).json({
+                    status: 'error',
+                    message:
+                        'This leave request has already been processed.'
+                });
+            }
+
+            const updatedResult =
+                await client.query(
+                    `
+                    UPDATE leave_requests
+                    SET
+                        status = 'rejected',
+                        reviewed_by = $1,
+                        reviewed_at = CURRENT_TIMESTAMP,
+                        rejection_reason = $3
+                    WHERE id = $2
+                    RETURNING *
+                    `,
+                    [
+                        req.user.userId,
+                        leaveId,
+                        reason
+                    ]
+                );
+
+            await client.query('COMMIT');
+
+            return res.status(200).json({
+                status: 'success',
+                message:
+                    'Leave request rejected successfully.',
+                request:
+                    updatedResult.rows[0]
+            });
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+
+            console.error(
+                'Reject leave error:',
+                error
+            );
+
+            return res.status(500).json({
+                status: 'error',
+                message:
+                    'Failed to reject leave request.'
+            });
+
+        } finally {
+            client.release();
+        }
+    }
+);
 module.exports = router;
